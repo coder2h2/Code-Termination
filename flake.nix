@@ -58,7 +58,15 @@
             if [ -f /etc/os-release ] && grep -q '^ID=nixos$' /etc/os-release; then
               export XKB_CONFIG_ROOT="${xkbConfigRoot}"
               export LD_LIBRARY_PATH="${runtimeLibraryPath}:$LD_LIBRARY_PATH"
+            else
+              unset XKB_CONFIG_ROOT
             fi
+
+            case ":$LD_LIBRARY_PATH:" in
+              *":${runtimeLibraryPath}:"*)
+                export LD_LIBRARY_PATH="$(printf '%s' "$LD_LIBRARY_PATH" | sed "s#${runtimeLibraryPath}:##")"
+                ;;
+            esac
           '';
         };
       }

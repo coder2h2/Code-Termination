@@ -1,7 +1,6 @@
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
 
-
 const WINDOW_WIDTH: u32 = 1280;
 const WINDOW_HEIGHT: u32 = 720;
 const PLAYER_SIZE: Vec2 = Vec2::new(96.0, 96.0);
@@ -60,59 +59,29 @@ impl Default for DashState {
     }
 }
 
-
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Default, States)]
 enum AppState {
     #[default]
+    TitleScreen,
     Game,
     Settings,
 }
 
-#[derive(Resource)]
-struct GameSettings {
-    player_speed: f32,
-    jump_speed: f32,
-    gravity: f32,
-}
-
-impl Default for GameSettings {
-    fn default() -> Self {
-        Self {
-            player_speed: PLAYER_SPEED,
-            jump_speed: JUMP_SPEED,
-            gravity: GRAVITY,
-        }
-    }
-}
+#[derive(Component)]
+struct TitleScreenUI;
 
 #[derive(Component)]
 struct SettingsMenuUI;
 
 #[derive(Component, Clone, Copy)]
 enum SettingsButtonAction {
-    DecSpeed,
-    IncSpeed,
-    DecJump,
-    IncJump,
-    DecGravity,
-    IncGravity,
     Resume,
+    Title,
 }
-
-#[derive(Component, Clone, Copy)]
-enum SettingsValueText {
-    Speed,
-    Jump,
-    Gravity,
-}
-
-#[derive(Component)]
-struct GameplayUI;
 
 fn main() {
     App::new()
         .insert_resource(ClearColor(Color::srgb(0.08, 0.09, 0.14)))
-        .insert_resource(GameSettings::default())
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "gidames".into(),
@@ -124,21 +93,22 @@ fn main() {
         }))
         .init_state::<AppState>()
         .add_systems(Startup, setup)
-        .add_systems(OnEnter(AppState::Game), setup_gameplay_ui)
-        .add_systems(OnExit(AppState::Game), cleanup_gameplay_ui)
+        // Title screen
+        .add_systems(OnEnter(AppState::TitleScreen), setup_title_screen)
+        .add_systems(OnExit(AppState::TitleScreen), cleanup_title_screen)
+        .add_systems(Update, play_button_system.run_if(in_state(AppState::TitleScreen)))
+        // Game
+        .add_systems(OnEnter(AppState::Game), reset_player_system)
         .add_systems(Update, toggle_settings_menu)
         .add_systems(Update, (
             move_player,
             jump_player,
             apply_velocity,
-            gameplay_button_system,
         ).run_if(in_state(AppState::Game)))
+        // Pause/Settings menu
         .add_systems(OnEnter(AppState::Settings), setup_settings_menu)
         .add_systems(OnExit(AppState::Settings), cleanup_settings_menu)
-        .add_systems(Update, (
-            settings_button_system,
-            update_settings_ui,
-        ).run_if(in_state(AppState::Settings)))
+        .add_systems(Update, settings_button_system.run_if(in_state(AppState::Settings)))
         .run();
 }
 
@@ -160,46 +130,84 @@ fn setup(mut commands: Commands) {
     ));
 }
 
-fn setup_gameplay_ui(mut commands: Commands) {
+fn reset_player_system(
+    mut player_query: Query<(&mut Transform, &mut Velocity, &mut JumpState, &mut DashState), With<Player>>,
+) {
+    for (mut transform, mut velocity, mut jump_state, mut dash_state) in &mut player_query {
+        transform.translation = Vec3::new(0.0, GROUND_Y, 1.0);
+        velocity.0 = Vec2::ZERO;
+        *jump_state = JumpState::default();
+        *dash_state = DashState::default();
+    }
+}
+
+fn setup_title_screen(mut commands: Commands) {
+    // Spawn the black background container overlay
     commands.spawn((
-        GameplayUI,
-        Button,
+        TitleScreenUI,
         Node {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
             position_type: PositionType::Absolute,
-            top: Val::Px(20.0),
-            right: Val::Px(20.0),
-            width: Val::Px(100.0),
-            height: Val::Px(40.0),
             justify_content: JustifyContent::Center,
             align_items: AlignItems::Center,
-            border: UiRect::all(Val::Px(2.0)),
+            flex_direction: FlexDirection::Column,
             ..default()
         },
-        BackgroundColor(Color::srgb(0.12, 0.12, 0.15)),
-        BorderColor::all(Color::srgb(0.48, 0.86, 0.62)),
+        BackgroundColor(Color::srgb(0.0, 0.0, 0.0)),
     ))
     .with_children(|parent| {
+        // Title Text
         parent.spawn((
-            Text::new("Settings"),
+            Text::new("Code-Termination"),
             TextFont {
-                font_size: 16.0,
+                font_size: 64.0,
                 ..default()
             },
-            TextColor(Color::WHITE),
+            TextColor(Color::srgb(0.0, 1.0, 0.0)),
+            Node {
+                margin: UiRect::bottom(Val::Px(40.0)),
+                ..default()
+            },
         ));
+
+        // Play Button
+        parent.spawn((
+            Button,
+            Node {
+                width: Val::Px(200.0),
+                height: Val::Px(50.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                border: UiRect::all(Val::Px(2.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgb(0.12, 0.12, 0.15)),
+            BorderColor::all(Color::srgb(0.0, 1.0, 0.0)),
+        ))
+        .with_children(|btn| {
+            btn.spawn((
+                Text::new("PLAY"),
+                TextFont {
+                    font_size: 24.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.0, 1.0, 0.0)),
+            ));
+        });
     });
 }
 
-fn cleanup_gameplay_ui(mut commands: Commands, query: Query<Entity, With<GameplayUI>>) {
+fn cleanup_title_screen(mut commands: Commands, query: Query<Entity, With<TitleScreenUI>>) {
     for entity in &query {
         commands.entity(entity).despawn();
     }
 }
 
-fn gameplay_button_system(
+fn play_button_system(
     mut interaction_query: Query<
         (&Interaction, &mut BackgroundColor),
-        (Changed<Interaction>, With<Button>, With<GameplayUI>),
+        (Changed<Interaction>, With<Button>),
     >,
     mut next_state: ResMut<NextState<AppState>>,
 ) {
@@ -207,7 +215,139 @@ fn gameplay_button_system(
         match *interaction {
             Interaction::Pressed => {
                 *bg_color = BackgroundColor(Color::srgb(0.3, 0.3, 0.4));
-                next_state.set(AppState::Settings);
+                next_state.set(AppState::Game);
+            }
+            Interaction::Hovered => {
+                *bg_color = BackgroundColor(Color::srgb(0.2, 0.2, 0.25));
+            }
+            Interaction::None => {
+                *bg_color = BackgroundColor(Color::srgb(0.12, 0.12, 0.15));
+            }
+        }
+    }
+}
+
+fn setup_settings_menu(mut commands: Commands) {
+    commands.spawn((
+        SettingsMenuUI,
+        Node {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            position_type: PositionType::Absolute,
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            flex_direction: FlexDirection::Column,
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.05, 0.05, 0.08, 0.85)),
+    ))
+    .with_children(|parent| {
+        // Modal panel card
+        parent.spawn((
+            Node {
+                width: Val::Px(350.0),
+                height: Val::Px(250.0),
+                justify_content: JustifyContent::SpaceBetween,
+                align_items: AlignItems::Center,
+                flex_direction: FlexDirection::Column,
+                border: UiRect::all(Val::Px(3.0)),
+                padding: UiRect::all(Val::Px(25.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgb(0.09, 0.11, 0.16)),
+            BorderColor::all(Color::srgb(0.0, 1.0, 0.0)),
+        ))
+        .with_children(|parent| {
+            // Title
+            parent.spawn((
+                Text::new("PAUSE"),
+                TextFont {
+                    font_size: 28.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.0, 1.0, 0.0)),
+            ));
+
+            // Resume button
+            parent.spawn((
+                Button,
+                Node {
+                    width: Val::Px(200.0),
+                    height: Val::Px(45.0),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    border: UiRect::all(Val::Px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgb(0.12, 0.12, 0.15)),
+                BorderColor::all(Color::srgb(0.0, 1.0, 0.0)),
+                SettingsButtonAction::Resume,
+            ))
+            .with_children(|btn| {
+                btn.spawn((
+                    Text::new("Resume"),
+                    TextFont {
+                        font_size: 18.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.0, 1.0, 0.0)),
+                ));
+            });
+
+            // Title Screen button
+            parent.spawn((
+                Button,
+                Node {
+                    width: Val::Px(200.0),
+                    height: Val::Px(45.0),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    border: UiRect::all(Val::Px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgb(0.12, 0.12, 0.15)),
+                BorderColor::all(Color::srgb(0.0, 1.0, 0.0)),
+                SettingsButtonAction::Title,
+            ))
+            .with_children(|btn| {
+                btn.spawn((
+                    Text::new("Title Screen"),
+                    TextFont {
+                        font_size: 18.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.0, 1.0, 0.0)),
+                ));
+            });
+        });
+    });
+}
+
+fn cleanup_settings_menu(mut commands: Commands, query: Query<Entity, With<SettingsMenuUI>>) {
+    for entity in &query {
+        commands.entity(entity).despawn();
+    }
+}
+
+fn settings_button_system(
+    mut interaction_query: Query<
+        (&Interaction, &SettingsButtonAction, &mut BackgroundColor),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut next_state: ResMut<NextState<AppState>>,
+) {
+    for (interaction, action, mut bg_color) in &mut interaction_query {
+        match *interaction {
+            Interaction::Pressed => {
+                *bg_color = BackgroundColor(Color::srgb(0.3, 0.3, 0.4));
+                match action {
+                    SettingsButtonAction::Resume => {
+                        next_state.set(AppState::Game);
+                    }
+                    SettingsButtonAction::Title => {
+                        next_state.set(AppState::TitleScreen);
+                    }
+                }
             }
             Interaction::Hovered => {
                 *bg_color = BackgroundColor(Color::srgb(0.2, 0.2, 0.25));
@@ -228,268 +368,7 @@ fn toggle_settings_menu(
         match state.get() {
             AppState::Game => next_state.set(AppState::Settings),
             AppState::Settings => next_state.set(AppState::Game),
-        }
-    }
-}
-
-fn setup_settings_menu(mut commands: Commands, settings: Res<GameSettings>) {
-    // Spawn the dark background container overlay
-    commands.spawn((
-        SettingsMenuUI,
-        Node {
-            width: Val::Percent(100.0),
-            height: Val::Percent(100.0),
-            position_type: PositionType::Absolute,
-            justify_content: JustifyContent::Center,
-            align_items: AlignItems::Center,
-            flex_direction: FlexDirection::Column,
-            ..default()
-        },
-        BackgroundColor(Color::srgba(0.05, 0.05, 0.08, 0.85)),
-    ))
-    .with_children(|parent| {
-        // Main panel card
-        parent.spawn((
-            Node {
-                width: Val::Px(500.0),
-                height: Val::Px(420.0),
-                justify_content: JustifyContent::SpaceBetween,
-                align_items: AlignItems::Center,
-                flex_direction: FlexDirection::Column,
-                border: UiRect::all(Val::Px(3.0)),
-                padding: UiRect::all(Val::Px(20.0)),
-                ..default()
-            },
-            BackgroundColor(Color::srgb(0.09, 0.11, 0.16)),
-            BorderColor::all(Color::srgb(0.2, 0.25, 0.35)),
-        ))
-        .with_children(|parent| {
-            // Title
-            parent.spawn((
-                Text::new("SETTINGS"),
-                TextFont {
-                    font_size: 32.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(0.48, 0.86, 0.62)),
-            ));
-
-            // Row for Player Speed
-            spawn_settings_row(parent, "Player Speed", format!("{:.0}", settings.player_speed), SettingsButtonAction::DecSpeed, SettingsButtonAction::IncSpeed, SettingsValueText::Speed);
-
-            // Row for Jump Speed
-            spawn_settings_row(parent, "Jump Speed", format!("{:.0}", settings.jump_speed), SettingsButtonAction::DecJump, SettingsButtonAction::IncJump, SettingsValueText::Jump);
-
-            // Row for Gravity
-            spawn_settings_row(parent, "Gravity", format!("{:.0}", settings.gravity), SettingsButtonAction::DecGravity, SettingsButtonAction::IncGravity, SettingsValueText::Gravity);
-
-            // Resume/Close button
-            parent.spawn((
-                Button,
-                Node {
-                    width: Val::Px(160.0),
-                    height: Val::Px(45.0),
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    border: UiRect::all(Val::Px(2.0)),
-                    ..default()
-                },
-                BackgroundColor(Color::srgb(0.12, 0.12, 0.15)),
-                BorderColor::all(Color::srgb(0.48, 0.86, 0.62)),
-                SettingsButtonAction::Resume,
-            ))
-            .with_children(|btn| {
-                btn.spawn((
-                    Text::new("Resume"),
-                    TextFont {
-                        font_size: 18.0,
-                        ..default()
-                    },
-                    TextColor(Color::WHITE),
-                ));
-            });
-        });
-    });
-}
-
-fn spawn_settings_row(
-    parent: &mut ChildSpawnerCommands,
-    label: &str,
-    val_str: String,
-    dec_action: SettingsButtonAction,
-    inc_action: SettingsButtonAction,
-    val_marker: SettingsValueText,
-) {
-    parent.spawn(Node {
-        width: Val::Percent(100.0),
-        height: Val::Px(50.0),
-        justify_content: JustifyContent::SpaceBetween,
-        align_items: AlignItems::Center,
-        flex_direction: FlexDirection::Row,
-        padding: UiRect::horizontal(Val::Px(10.0)),
-        ..default()
-    })
-    .with_children(|row| {
-        // Label
-        row.spawn((
-            Text::new(label.to_string()),
-            TextFont {
-                font_size: 18.0,
-                ..default()
-            },
-            TextColor(Color::WHITE),
-            Node {
-                width: Val::Px(150.0),
-                ..default()
-            },
-        ));
-
-        // Controls container
-        row.spawn(Node {
-            width: Val::Px(250.0),
-            height: Val::Percent(100.0),
-            justify_content: JustifyContent::SpaceBetween,
-            align_items: AlignItems::Center,
-            flex_direction: FlexDirection::Row,
-            ..default()
-        })
-        .with_children(|ctrl| {
-            // Decrement Button
-            ctrl.spawn((
-                Button,
-                Node {
-                    width: Val::Px(40.0),
-                    height: Val::Px(35.0),
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    border: UiRect::all(Val::Px(1.0)),
-                    ..default()
-                },
-                BackgroundColor(Color::srgb(0.12, 0.12, 0.15)),
-                BorderColor::all(Color::srgb(0.3, 0.35, 0.45)),
-                dec_action,
-            ))
-            .with_children(|btn| {
-                btn.spawn((
-                    Text::new("-"),
-                    TextFont {
-                        font_size: 20.0,
-                        ..default()
-                    },
-                    TextColor(Color::WHITE),
-                ));
-            });
-
-            // Value text
-            ctrl.spawn((
-                Text::new(val_str),
-                TextFont {
-                    font_size: 18.0,
-                    ..default()
-                },
-                TextColor(Color::WHITE),
-                val_marker,
-            ));
-
-            // Increment Button
-            ctrl.spawn((
-                Button,
-                Node {
-                    width: Val::Px(40.0),
-                    height: Val::Px(35.0),
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    border: UiRect::all(Val::Px(1.0)),
-                    ..default()
-                },
-                BackgroundColor(Color::srgb(0.12, 0.12, 0.15)),
-                BorderColor::all(Color::srgb(0.3, 0.35, 0.45)),
-                inc_action,
-            ))
-            .with_children(|btn| {
-                btn.spawn((
-                    Text::new("+"),
-                    TextFont {
-                        font_size: 20.0,
-                        ..default()
-                    },
-                    TextColor(Color::WHITE),
-                ));
-            });
-        });
-    });
-}
-
-fn cleanup_settings_menu(mut commands: Commands, query: Query<Entity, With<SettingsMenuUI>>) {
-    for entity in &query {
-        commands.entity(entity).despawn();
-    }
-}
-
-fn settings_button_system(
-    mut interaction_query: Query<
-        (&Interaction, &SettingsButtonAction, &mut BackgroundColor),
-        (Changed<Interaction>, With<Button>),
-    >,
-    mut settings: ResMut<GameSettings>,
-    mut next_state: ResMut<NextState<AppState>>,
-) {
-    for (interaction, action, mut bg_color) in &mut interaction_query {
-        match *interaction {
-            Interaction::Pressed => {
-                *bg_color = BackgroundColor(Color::srgb(0.3, 0.3, 0.4));
-                match action {
-                    SettingsButtonAction::DecSpeed => {
-                        settings.player_speed = (settings.player_speed - 20.0).max(100.0);
-                    }
-                    SettingsButtonAction::IncSpeed => {
-                        settings.player_speed = (settings.player_speed + 20.0).min(1200.0);
-                    }
-                    SettingsButtonAction::DecJump => {
-                        settings.jump_speed = (settings.jump_speed - 50.0).max(200.0);
-                    }
-                    SettingsButtonAction::IncJump => {
-                        settings.jump_speed = (settings.jump_speed + 50.0).min(1500.0);
-                    }
-                    SettingsButtonAction::DecGravity => {
-                        settings.gravity = (settings.gravity - 100.0).max(300.0);
-                    }
-                    SettingsButtonAction::IncGravity => {
-                        settings.gravity = (settings.gravity + 100.0).min(4000.0);
-                    }
-                    SettingsButtonAction::Resume => {
-                        next_state.set(AppState::Game);
-                    }
-                }
-            }
-            Interaction::Hovered => {
-                *bg_color = BackgroundColor(Color::srgb(0.2, 0.2, 0.25));
-            }
-            Interaction::None => {
-                *bg_color = BackgroundColor(Color::srgb(0.12, 0.12, 0.15));
-            }
-        }
-    }
-}
-
-fn update_settings_ui(
-    settings: Res<GameSettings>,
-    mut text_query: Query<(&mut Text, &SettingsValueText)>,
-) {
-    if !settings.is_changed() {
-        return;
-    }
-    for (mut text, value_type) in &mut text_query {
-        match value_type {
-            SettingsValueText::Speed => {
-                *text = Text::new(format!("{:.0}", settings.player_speed));
-            }
-            SettingsValueText::Jump => {
-                *text = Text::new(format!("{:.0}", settings.jump_speed));
-            }
-            SettingsValueText::Gravity => {
-                *text = Text::new(format!("{:.0}", settings.gravity));
-            }
+            _ => {}
         }
     }
 }
@@ -497,7 +376,6 @@ fn update_settings_ui(
 fn move_player(
     keyboard: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
-    settings: Res<GameSettings>,
     mut player_query: Query<(&mut Transform, &mut DashState, &mut Sprite, &JumpState), With<Player>>,
 ) {
     let now = time.elapsed_secs();
@@ -570,7 +448,7 @@ fn move_player(
                 direction += 1.0;
             }
             if direction != 0.0 {
-                transform.translation.x += direction * settings.player_speed * delta;
+                transform.translation.x += direction * PLAYER_SPEED * delta;
             }
         }
     }
@@ -578,7 +456,6 @@ fn move_player(
 
 fn jump_player(
     keyboard: Res<ButtonInput<KeyCode>>,
-    settings: Res<GameSettings>,
     mut player_query: Query<(&Transform, &mut Velocity, &mut JumpState), With<Player>>,
 ) {
     let down_pressed = keyboard.just_pressed(KeyCode::KeyS) || keyboard.just_pressed(KeyCode::ArrowDown);
@@ -591,7 +468,7 @@ fn jump_player(
             velocity.0.y = SMASHDOWN_SPEED;
             jump_state.is_smashing = true;
         } else if up_pressed && jump_state.jumps_remaining > 0 && !jump_state.is_smashing {
-            velocity.0.y = settings.jump_speed;
+            velocity.0.y = JUMP_SPEED;
             jump_state.jumps_remaining -= 1;
         }
     }
@@ -599,7 +476,6 @@ fn jump_player(
 
 fn apply_velocity(
     time: Res<Time>,
-    settings: Res<GameSettings>,
     mut player_query: Query<(&mut Transform, &mut Velocity, &mut JumpState, &mut DashState), With<Player>>,
 ) {
     for (mut transform, mut velocity, mut jump_state, mut dash_state) in &mut player_query {
@@ -607,7 +483,7 @@ fn apply_velocity(
             // Freeze vertical velocity during dash
             velocity.0.y = 0.0;
         } else {
-            velocity.0.y -= settings.gravity * time.delta_secs();
+            velocity.0.y -= GRAVITY * time.delta_secs();
         }
         
         transform.translation += velocity.0.extend(0.0) * time.delta_secs();

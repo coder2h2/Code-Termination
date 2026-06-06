@@ -55,8 +55,10 @@
           ];
 
           shellHook = ''
-            export XKB_CONFIG_ROOT="${xkbConfigRoot}"
-            export LD_LIBRARY_PATH="${runtimeLibraryPath}:$LD_LIBRARY_PATH"
+            if [ -f /etc/os-release ] && grep -q '^ID=nixos$' /etc/os-release; then
+              export XKB_CONFIG_ROOT="${xkbConfigRoot}"
+              export LD_LIBRARY_PATH="${runtimeLibraryPath}:$LD_LIBRARY_PATH"
+            fi
           '';
         };
       }

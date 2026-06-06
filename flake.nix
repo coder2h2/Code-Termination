@@ -18,6 +18,14 @@
         pkgs = import nixpkgs {
           inherit system;
         };
+        rustPackages = with pkgs; [
+          cargo
+          clippy
+          pkg-config
+          rust-analyzer
+          rustc
+          rustfmt
+        ];
         xkbConfigRoot = "${pkgs.xkeyboard_config}/share/X11/xkb";
         runtimeLibs = with pkgs; [
           alsa-lib
@@ -34,39 +42,15 @@
       in
       {
         devShells.default = pkgs.mkShell {
-          packages = with pkgs; [
-            alsa-lib
-            cargo
-            clippy
-            libxkbcommon
-            pkg-config
-            rust-analyzer
-            rustc
-            rustfmt
-            udev
-            vulkan-loader
-            vulkan-tools
-            wayland
-            xkeyboard_config
-            libx11
-            libxcursor
-            libxi
-            libxrandr
-          ];
+          packages = rustPackages;
+        };
+
+        devShells.nixos = pkgs.mkShell {
+          packages = rustPackages ++ runtimeLibs ++ [ pkgs.vulkan-tools pkgs.xkeyboard_config ];
 
           shellHook = ''
-            if [ -f /etc/os-release ] && grep -q '^ID=nixos$' /etc/os-release; then
-              export XKB_CONFIG_ROOT="${xkbConfigRoot}"
-              export LD_LIBRARY_PATH="${runtimeLibraryPath}:$LD_LIBRARY_PATH"
-            else
-              unset XKB_CONFIG_ROOT
-            fi
-
-            case ":$LD_LIBRARY_PATH:" in
-              *":${runtimeLibraryPath}:"*)
-                export LD_LIBRARY_PATH="$(printf '%s' "$LD_LIBRARY_PATH" | sed "s#${runtimeLibraryPath}:##")"
-                ;;
-            esac
+            export XKB_CONFIG_ROOT="${xkbConfigRoot}"
+            export LD_LIBRARY_PATH="${runtimeLibraryPath}:$LD_LIBRARY_PATH"
           '';
         };
       }

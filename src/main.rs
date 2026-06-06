@@ -5,6 +5,10 @@ const WINDOW_WIDTH: u32 = 1280;
 const WINDOW_HEIGHT: u32 = 720;
 const PLAYER_SIZE: Vec2 = Vec2::new(96.0, 96.0);
 const GROUND_SIZE: Vec2 = Vec2::new(2200.0, 120.0);
+const PLAYER_SPEED: f32 = 420.0;
+
+#[derive(Component)]
+struct Player;
 
 fn main() {
     App::new()
@@ -19,6 +23,7 @@ fn main() {
             ..default()
         }))
         .add_systems(Startup, setup)
+        .add_systems(Update, move_player)
         .run();
 }
 
@@ -31,7 +36,32 @@ fn setup(mut commands: Commands) {
     ));
 
     commands.spawn((
+        Player,
         Sprite::from_color(Color::srgb(0.48, 0.86, 0.62), PLAYER_SIZE),
         Transform::from_xyz(0.0, -110.0, 1.0),
     ));
+}
+
+fn move_player(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
+    mut player_query: Query<&mut Transform, With<Player>>,
+) {
+    let mut direction = 0.0;
+
+    if keyboard.pressed(KeyCode::KeyA) {
+        direction -= 1.0;
+    }
+
+    if keyboard.pressed(KeyCode::KeyD) {
+        direction += 1.0;
+    }
+
+    if direction == 0.0 {
+        return;
+    }
+
+    for mut transform in &mut player_query {
+        transform.translation.x += direction * PLAYER_SPEED * time.delta_secs();
+    }
 }

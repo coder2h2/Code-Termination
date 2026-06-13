@@ -7,6 +7,10 @@ on:
         description: 'Update Passcode'
         required: true
         type: string
+      phrase:
+        description: 'Update Phrase'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -15,11 +19,16 @@ jobs:
   signal:
     runs-on: ubuntu-latest
     steps:
-      - name: Validate Passcode
+      - name: Validate Passcode and Phrase
         run: |
           echo "::add-mask::${{ github.event.inputs.passcode }}"
+          echo "::add-mask::${{ github.event.inputs.phrase }}"
           if [ -z "${{ secrets.GAME_UPDATE_PASSCODE }}" ] || [ "${{ github.event.inputs.passcode }}" != "${{ secrets.GAME_UPDATE_PASSCODE }}" ]; then
             echo "Error: Invalid passcode"
+            exit 1
+          fi
+          if [ -z "${{ secrets.GAME_UPDATE_PHRASE }}" ] || [ "${{ github.event.inputs.phrase }}" != "${{ secrets.GAME_UPDATE_PHRASE }}" ]; then
+            echo "Error: Invalid phrase"
             exit 1
           fi
 

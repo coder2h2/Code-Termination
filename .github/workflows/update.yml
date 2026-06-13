@@ -1,0 +1,38 @@
+name: Trigger Game Update
+
+on:
+  workflow_dispatch:
+    inputs:
+      passcode:
+        description: 'Update Passcode'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  signal:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate Passcode
+        run: |
+          if [ "${{ github.event.inputs.passcode }}" != "95443" ]; then
+            echo "Error: Invalid passcode"
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Write Update Signal
+        run: |
+          echo "IDN:226531" > update_signal.txt
+
+      - name: Commit and Push Signal
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add update_signal.txt
+          git commit -m "update: trigger auto-update signal IDN:226531" || echo "No changes to commit"
+          git push

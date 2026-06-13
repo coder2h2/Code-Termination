@@ -196,10 +196,10 @@ pub fn stdin_is_tty() -> bool {
 }
 
 pub fn run_auto_update() {
-    let repo = "your-github-username/Code-Termination";
+    let repo = "gideonaelaurie/Code-Termination";
     let current_commit = env!("GIT_HASH");
     
-    if std::env::var("NO_AUTO_UPDATE").is_ok() || repo.contains("your-github-username") {
+    if std::env::var("NO_AUTO_UPDATE").is_ok() {
         return;
     }
 
@@ -208,7 +208,24 @@ pub fn run_auto_update() {
         return;
     }
 
-    println!("[Auto-Updater] Checking for new updates...");
+    // Fetch the update signal first
+    let signal_url = format!("https://raw.githubusercontent.com/{}/main/update_signal.txt", repo);
+    let signal_output = std::process::Command::new("curl")
+        .arg("-s")
+        .arg("-m")
+        .arg("2")
+        .arg(&signal_url)
+        .output();
+
+    let Ok(signal_output) = signal_output else { return; };
+    if !signal_output.status.success() { return; }
+    let signal_str = String::from_utf8_lossy(&signal_output.stdout);
+    if !signal_str.contains("IDN:226531") {
+        // Signal not found or incorrect, ignore update check
+        return;
+    }
+
+    println!("[Auto-Updater] Active update signal detected. Checking for new updates...");
     
     // Fetch latest commit SHA from main branch
     let url = format!("https://api.github.com/repos/{}/commits/main", repo);

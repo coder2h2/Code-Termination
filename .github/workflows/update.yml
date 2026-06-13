@@ -32,12 +32,17 @@ jobs:
 
       - name: Write Update Signal
         run: |
-          echo "IDN:226531" > update_signal.txt
+          SIGNAL="${{ secrets.PHASE_UPDATE }}"
+          if [ -z "$SIGNAL" ]; then
+            SIGNAL="IDN:226531"
+          fi
+          echo "$SIGNAL" > update_signal.txt
+          echo "SIGNAL_VALUE=$SIGNAL" >> $GITHUB_ENV
 
       - name: Commit and Push Signal
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add update_signal.txt
-          git commit -m "update: trigger auto-update signal IDN:226531" || echo "No changes to commit"
+          git commit -m "update: trigger auto-update signal ${{ env.SIGNAL_VALUE }}" || echo "No changes to commit"
           git push

@@ -212,7 +212,9 @@ pub fn move_player(
             continue;
         }
 
-        let is_in_air = transform.translation.y > GROUND_Y;
+        let floor_half_width = FLOOR_WIDTH / 2.0;
+        let on_floor = transform.translation.x >= -floor_half_width && transform.translation.x <= floor_half_width;
+        let is_in_air = transform.translation.y > GROUND_Y || !on_floor;
 
         // Detect gamepad direction and button dash
         let mut gamepad_dir = 0.0;
@@ -348,7 +350,9 @@ pub fn jump_player(
         });
 
     for (transform, mut velocity, mut jump_state) in &mut player_query {
-        let is_in_air = transform.translation.y > GROUND_Y;
+        let floor_half_width = FLOOR_WIDTH / 2.0;
+        let on_floor = transform.translation.x >= -floor_half_width && transform.translation.x <= floor_half_width;
+        let is_in_air = transform.translation.y > GROUND_Y || !on_floor;
 
         if down_pressed && is_in_air {
             velocity.0.y = SMASHDOWN_SPEED;
@@ -376,7 +380,10 @@ pub fn apply_velocity(
         
         transform.translation += velocity.0.extend(0.0) * time.delta_secs();
 
-        if transform.translation.y < GROUND_Y {
+        let floor_half_width = FLOOR_WIDTH / 2.0;
+        let on_floor = transform.translation.x >= -floor_half_width && transform.translation.x <= floor_half_width;
+
+        if on_floor && transform.translation.y < GROUND_Y {
             transform.translation.y = GROUND_Y;
             velocity.0.y = 0.0;
             jump_state.jumps_remaining = jump_state.max_jumps;

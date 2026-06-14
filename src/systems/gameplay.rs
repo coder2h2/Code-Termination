@@ -196,6 +196,21 @@ pub fn handle_damage(
         let player_top = player_y + PLAYER_SIZE.y / 2.0;
         let player_bottom = player_y - PLAYER_SIZE.y / 2.0;
 
+        // Check if player has fallen off the floor and into the void
+        if player_y < GROUND_Y - 300.0 {
+            ram_state.current = 0;
+            achievements.death_count += 1;
+            crate::helpers::save_achievements(&achievements);
+            
+            unlock_achievement(&mut commands, &mut achievements, &toast_container_query, "system_crash");
+            if achievements.death_count >= 10 {
+                unlock_achievement(&mut commands, &mut achievements, &toast_container_query, "better_call_tech_support");
+            }
+            
+            next_state.set(AppState::DeathScreen);
+            return;
+        }
+
         let mut take_damage = false;
 
         // 1. Check spike collisions (hazardous red zones) - only if we are NOT currently glitching
@@ -496,7 +511,7 @@ pub fn check_gate_collision(
             let dx = (px - gx).abs();
             let dy = (py - gy).abs();
             if dx < (48.0 + 40.0) / 2.0 && dy < (64.0 + 60.0) / 2.0 {
-                if level_state.current_level < 4 {
+                if level_state.current_level < 3 {
                     level_state.current_level += 1;
                     load_level(
                         level_state.current_level,
@@ -507,6 +522,10 @@ pub fn check_gate_collision(
                         &tutorial_state,
                     );
                     save_game(-350.0, GROUND_Y, 6, tutorial_state.visible, level_state.current_level);
+                } else if level_state.current_level == 3 {
+                    level_state.current_level += 1;
+                    save_game(-350.0, GROUND_Y, 6, tutorial_state.visible, level_state.current_level);
+                    next_state.set(AppState::BossTransition);
                 } else {
                     next_state.set(AppState::DemoComplete);
                 }

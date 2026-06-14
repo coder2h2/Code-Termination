@@ -7,3 +7,4 @@ pub mod player;
 pub mod enemy;
 pub mod gameplay;
 pub mod dlc_menu;
+pub mod boss_transition;

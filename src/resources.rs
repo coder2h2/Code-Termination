@@ -33,6 +33,7 @@ pub enum AppState {
     #[default]
     TitleScreen,
     Game,
+    BossTransition,
     Settings,
     Achievements,
     DlcMenu,

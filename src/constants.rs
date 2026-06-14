@@ -6,6 +6,7 @@ pub const PLAYER_SPEED: f32 = 420.0;
 pub const JUMP_SPEED: f32 = 720.0;
 pub const GRAVITY: f32 = 1800.0;
 pub const GROUND_Y: f32 = -110.0;
+pub const FLOOR_WIDTH: f32 = 900.0;
 
 pub const DASH_SPEED: f32 = 1400.0;
 pub const DASH_DURATION: f32 = 0.18;

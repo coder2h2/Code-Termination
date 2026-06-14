@@ -644,6 +644,14 @@ pub fn load_level(
         ram_state.current = ram_state.max; // Full RAM health
     }
 
+    // Spawn the Floor platform
+    commands.spawn((
+        LevelEntity,
+        Sprite::from_color(Color::srgb(0.12, 0.14, 0.19), Vec2::new(FLOOR_WIDTH, 40.0)),
+        Transform::from_xyz(0.0, GROUND_Y - PLAYER_SIZE.y / 2.0 - 20.0, 0.5),
+    ));
+
+
     // 5. Spawn new level entities
     match level {
         1 => {
@@ -737,15 +745,27 @@ pub fn load_level(
                 Boss {
                     health: 3,
                     invulnerable_timer: 0.0,
-                    state: BossAttackState::Patrol,
-                    state_timer: 0.0,
+                    state: BossAttackState::Intro,
+                    state_timer: 2.0,
                     attack_cooldown_timer: 3.0,
                     ram_direction: 0.0,
                     sweep_target_x: 0.0,
                 },
                 Sprite::from_color(Color::srgb(1.0, 0.0, 0.0), Vec2::new(128.0, 128.0)),
-                Transform::from_xyz(0.0, -96.0, 1.0),
-            ));
+                Transform::from_xyz(0.0, 400.0, 1.0),
+            ))
+            .with_children(|boss_parent| {
+                boss_parent.spawn((
+                    BossSpeechText,
+                    Text::new("ACCESS DENIED"),
+                    TextFont {
+                        font_size: 20.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(1.0, 0.1, 0.1)),
+                    Transform::from_xyz(0.0, 90.0, 2.0),
+                ));
+            });
         }
         _ => {}
     }

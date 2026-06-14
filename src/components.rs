@@ -108,6 +108,9 @@ pub struct TutorialHUD;
 pub struct LevelEntity;
 
 #[derive(Component)]
+pub struct BossSpeechText;
+
+#[derive(Component)]
 pub struct GatewayConsole;
 
 #[derive(Component)]
@@ -121,6 +124,7 @@ pub struct BossHealthBarFill;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum BossAttackState {
+    Intro,
     Patrol,
     PrepareRam,
     Ram,

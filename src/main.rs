@@ -18,6 +18,7 @@ use systems::player::*;
 use systems::enemy::*;
 use systems::gameplay::*;
 use systems::dlc_menu::*;
+use systems::boss_transition::*;
 
 fn main() {
     run_auto_update();
@@ -55,6 +56,17 @@ fn main() {
             },
             reset_player_system,
         )
+        .add_systems(
+            OnTransition {
+                exited: AppState::BossTransition,
+                entered: AppState::Game,
+            },
+            reset_player_system,
+        )
+        // Boss Transition Screen
+        .add_systems(OnEnter(AppState::BossTransition), setup_boss_transition)
+        .add_systems(OnExit(AppState::BossTransition), cleanup_boss_transition)
+        .add_systems(Update, boss_transition_system.run_if(in_state(AppState::BossTransition)))
         .add_systems(Update, toggle_settings_menu)
         .add_systems(Update, (
             (

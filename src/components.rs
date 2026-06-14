@@ -168,6 +168,7 @@ pub enum TitleButtonAction {
     Play,
     NewGame,
     Achievements,
+    Dlc,
     Quit,
 }
 

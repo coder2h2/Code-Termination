@@ -359,6 +359,19 @@ pub fn run_auto_update() {
     }
 }
 
+pub fn has_dlc() -> bool {
+    let paths = [
+        std::path::PathBuf::from("dlc_signal.txt"),
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("dlc_signal.txt"),
+    ];
+    for path in &paths {
+        if path.exists() {
+            return true;
+        }
+    }
+    false
+}
+
 pub fn save_game(x: f32, y: f32, ram: u32, tutorial_visible: bool, level: u32) {
     let content = format!("{},{},{},{},{}", x, y, ram, tutorial_visible, level);
     if let Err(e) = std::fs::write("savegame.txt", content) {

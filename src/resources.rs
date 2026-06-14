@@ -35,6 +35,7 @@ pub enum AppState {
     Game,
     Settings,
     Achievements,
+    DlcMenu,
     DeathScreen,
     DemoComplete,
 }

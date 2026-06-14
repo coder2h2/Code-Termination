@@ -122,6 +122,33 @@ pub fn setup_title_screen(
             ));
         });
 
+        // DLC Button
+        parent.spawn((
+            Button,
+            Node {
+                width: Val::Px(240.0),
+                height: Val::Px(50.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                border: UiRect::all(Val::Px(2.0)),
+                margin: UiRect::bottom(Val::Px(15.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgb(0.12, 0.12, 0.15)),
+            BorderColor::all(Color::srgb(0.0, 1.0, 0.0)),
+            TitleButtonAction::Dlc,
+        ))
+        .with_children(|btn| {
+            btn.spawn((
+                Text::new("DLC"),
+                TextFont {
+                    font_size: 24.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.0, 1.0, 0.0)),
+            ));
+        });
+
         // Quit Button
         parent.spawn((
             Button,
@@ -173,7 +200,8 @@ pub fn title_button_system(
         TitleButtonAction::Play => 0,
         TitleButtonAction::NewGame => 1,
         TitleButtonAction::Achievements => 2,
-        TitleButtonAction::Quit => 3,
+        TitleButtonAction::Dlc => 3,
+        TitleButtonAction::Quit => 4,
     });
     let total_buttons = buttons.len();
 
@@ -261,6 +289,9 @@ pub fn title_button_system(
             }
             TitleButtonAction::Achievements => {
                 next_state.set(AppState::Achievements);
+            }
+            TitleButtonAction::Dlc => {
+                next_state.set(AppState::DlcMenu);
             }
             TitleButtonAction::Quit => {
                 app_exit_events.write(AppExit::Success);

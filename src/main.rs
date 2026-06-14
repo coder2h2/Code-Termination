@@ -17,6 +17,7 @@ use systems::demo_complete::*;
 use systems::player::*;
 use systems::enemy::*;
 use systems::gameplay::*;
+use systems::dlc_menu::*;
 
 fn main() {
     run_auto_update();
@@ -92,5 +93,9 @@ fn main() {
         .add_systems(OnEnter(AppState::DemoComplete), setup_demo_complete)
         .add_systems(OnExit(AppState::DemoComplete), cleanup_demo_complete)
         .add_systems(Update, demo_complete_system.run_if(in_state(AppState::DemoComplete)))
+        // DLC screen
+        .add_systems(OnEnter(AppState::DlcMenu), setup_dlc_screen)
+        .add_systems(OnExit(AppState::DlcMenu), cleanup_dlc_screen)
+        .add_systems(Update, dlc_screen_system.run_if(in_state(AppState::DlcMenu)))
         .run();
 }

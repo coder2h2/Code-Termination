@@ -10,13 +10,17 @@ pub fn update_enemies(
     mut query: Query<(&mut Transform, &mut Enemy, &mut Visibility, &mut Sprite, Option<&mut Boss>), Without<Player>>,
     player_query: Query<&Transform, With<Player>>,
     speech_query: Query<(Entity, &ChildOf), With<BossSpeechText>>,
+    hacker_mode: Res<HackerMode>,
 ) {
     let delta = time.delta_secs();
-    let speed_multiplier = match overclock.mode {
+    let mut speed_multiplier = match overclock.mode {
         CpuClockMode::Overclocked => 0.5,
         CpuClockMode::Underclocked => 0.4,
         CpuClockMode::Normal => 1.0,
     };
+    if hacker_mode.active {
+        speed_multiplier *= 1.6;
+    }
 
     // Get player x position
     let player_x = if let Ok(player_trans) = player_query.single() {
@@ -109,7 +113,7 @@ pub fn update_enemies(
                 }
                 BossAttackState::Ram => {
                     // Charge at high speed
-                    let charge_speed = 600.0;
+                    let charge_speed = if hacker_mode.active { 900.0 } else { 600.0 };
                     transform.translation.x += boss.ram_direction * charge_speed * speed_multiplier * delta;
 
                     // Bound checks
@@ -146,7 +150,7 @@ pub fn update_enemies(
                         // Stationary warning
                     } else {
                         // Sweep across the ground to the other side
-                        let sweep_speed = 450.0;
+                        let sweep_speed = if hacker_mode.active { 700.0 } else { 450.0 };
                         let diff = boss.sweep_target_x - transform.translation.x;
                         if diff.abs() > 10.0 {
                             let sweep_dir = diff.signum();

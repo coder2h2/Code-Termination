@@ -12,14 +12,16 @@ pub fn reset_player_system(
     mut level_state: ResMut<LevelState>,
     mut tutorial_state: ResMut<TutorialState>,
     pending_load: Res<PendingGameLoad>,
+    mut hacker_mode: ResMut<HackerMode>,
 ) {
     let mut loaded_level = 1;
     let mut loaded = false;
     if pending_load.should_load {
-        if let Some((x, y, ram, tut_visible, level)) = load_game() {
+        if let Some((x, y, ram, tut_visible, level, hacker_active)) = load_game() {
             tutorial_state.visible = tut_visible;
             loaded_level = level;
             level_state.current_level = level;
+            hacker_mode.active = hacker_active;
             for (mut transform, mut velocity, mut jump_state, mut dash_state, mut glitch_state, mut ram_state) in &mut player_query {
                 transform.translation = Vec3::new(x, y, 1.0);
                 velocity.0 = Vec2::ZERO;
@@ -44,7 +46,7 @@ pub fn reset_player_system(
             *glitch_state = GlitchState::default();
             ram_state.current = ram_state.max;
         }
-        save_game(-350.0, GROUND_Y, 6, true, 1);
+        save_game(-350.0, GROUND_Y, 6, true, 1, hacker_mode.active);
     }
 
     // Load level entities and HUD
@@ -55,6 +57,7 @@ pub fn reset_player_system(
         &mut player_query,
         &hud_query,
         &tutorial_state,
+        hacker_mode.active,
     );
 }
 

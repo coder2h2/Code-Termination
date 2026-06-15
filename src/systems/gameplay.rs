@@ -48,6 +48,7 @@ pub fn auto_save_system(
     player_query: Query<(&Transform, &RamState), With<Player>>,
     tutorial_state: Res<TutorialState>,
     level_state: Res<LevelState>,
+    hacker_mode: Res<HackerMode>,
 ) {
     *timer += time.delta_secs();
     if *timer >= 2.0 {
@@ -64,6 +65,7 @@ pub fn auto_save_system(
                 ram_to_save,
                 tutorial_state.visible,
                 level_state.current_level,
+                hacker_mode.active,
             );
         }
     }
@@ -73,6 +75,7 @@ pub fn save_game_state(
     player_query: Query<(&Transform, &RamState), With<Player>>,
     tutorial_state: Res<TutorialState>,
     level_state: Res<LevelState>,
+    hacker_mode: Res<HackerMode>,
 ) {
     if let Ok((transform, ram_state)) = player_query.single() {
         let ram_to_save = if ram_state.current == 0 {
@@ -86,6 +89,7 @@ pub fn save_game_state(
             ram_to_save,
             tutorial_state.visible,
             level_state.current_level,
+            hacker_mode.active,
         );
     }
 }
@@ -170,6 +174,7 @@ pub fn handle_damage(
     mut enemy_query: Query<(&Transform, &mut Enemy, &mut Visibility, Option<&mut Boss>), (Without<Player>, Without<Spike>, Without<Wall>)>,
     laser_query: Query<(&Transform, &Laser), (Without<Player>, Without<Spike>, Without<Wall>)>,
     mut next_state: ResMut<NextState<AppState>>,
+    hacker_mode: Res<HackerMode>,
 ) {
     let delta = time.delta_secs();
 
@@ -341,12 +346,13 @@ pub fn handle_damage(
 
         // Apply damage if not invulnerable
         if take_damage && ram_state.invulnerability_timer == 0.0 {
-            if ram_state.current >= 2 {
-                ram_state.current -= 2;
+            let damage = if hacker_mode.active { 4 } else { 2 };
+            if ram_state.current >= damage {
+                ram_state.current -= damage;
             } else {
                 ram_state.current = 0;
             }
-            ram_state.invulnerability_timer = 1.0; // 1 second invulnerability
+            ram_state.invulnerability_timer = if hacker_mode.active { 0.5 } else { 1.0 };
 
             // If crash, transition to DeathScreen
             if ram_state.current == 0 {
@@ -501,6 +507,7 @@ pub fn check_gate_collision(
     level_entity_query: Query<Entity, With<LevelEntity>>,
     hud_query: Query<Entity, With<GameHUD>>,
     tutorial_state: Res<TutorialState>,
+    hacker_mode: Res<HackerMode>,
 ) {
     if let Ok((player_trans, _velocity, _jump_state, _dash_state, _glitch_state, _ram_state)) = player_query.single_mut() {
         for gate_trans in &gate_query {
@@ -521,11 +528,12 @@ pub fn check_gate_collision(
                         &mut player_query,
                         &hud_query,
                         &tutorial_state,
+                        hacker_mode.active,
                     );
-                    save_game(-350.0, GROUND_Y, 6, tutorial_state.visible, level_state.current_level);
+                    save_game(-350.0, GROUND_Y, 6, tutorial_state.visible, level_state.current_level, hacker_mode.active);
                 } else if level_state.current_level == 3 {
                     level_state.current_level += 1;
-                    save_game(-350.0, GROUND_Y, 6, tutorial_state.visible, level_state.current_level);
+                    save_game(-350.0, GROUND_Y, 6, tutorial_state.visible, level_state.current_level, hacker_mode.active);
                     next_state.set(AppState::BossTransition);
                 } else {
                     next_state.set(AppState::DemoComplete);
@@ -547,6 +555,7 @@ pub fn update_hud(
     boss_query: Query<&Boss>,
     mut fill_query: Query<&mut Node, With<BossHealthBarFill>>,
     bar_query: Query<Entity, With<BossHealthBar>>,
+    hacker_mode: Res<HackerMode>,
 ) {
     if let Ok(mut text) = level_hud_query.single_mut() {
         text.0 = format!("ZONE: TUTORIAL [SECTOR 0{}]", level_state.current_level);
@@ -592,7 +601,7 @@ pub fn update_hud(
     if let Ok(boss) = boss_query.single() {
         if boss.health > 0 {
             if let Ok(mut fill_node) = fill_query.single_mut() {
-                fill_node.width = Val::Percent((boss.health as f32 / 3.0) * 100.0);
+                fill_node.width = Val::Percent((boss.health as f32 / (if hacker_mode.active { 6.0 } else { 3.0 })) * 100.0);
             }
         } else {
             if let Ok(bar_entity) = bar_query.single() {

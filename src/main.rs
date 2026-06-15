@@ -19,6 +19,7 @@ use systems::enemy::*;
 use systems::gameplay::*;
 use systems::dlc_menu::*;
 use systems::boss_transition::*;
+use systems::mode_select::*;
 
 fn main() {
     run_auto_update();
@@ -39,6 +40,7 @@ fn main() {
         .insert_resource(load_achievements())
         .insert_resource(OverclockState::default())
         .insert_resource(LevelState::default())
+        .insert_resource(HackerMode::default())
         .add_systems(Startup, setup)
         // Title screen
         .add_systems(OnEnter(AppState::TitleScreen), (reset_virtual_time_system, setup_title_screen))
@@ -63,10 +65,21 @@ fn main() {
             },
             reset_player_system,
         )
+        .add_systems(
+            OnTransition {
+                exited: AppState::ModeSelect,
+                entered: AppState::Game,
+            },
+            reset_player_system,
+        )
         // Boss Transition Screen
         .add_systems(OnEnter(AppState::BossTransition), setup_boss_transition)
         .add_systems(OnExit(AppState::BossTransition), cleanup_boss_transition)
         .add_systems(Update, boss_transition_system.run_if(in_state(AppState::BossTransition)))
+        // Mode Select Screen
+        .add_systems(OnEnter(AppState::ModeSelect), setup_mode_select)
+        .add_systems(OnExit(AppState::ModeSelect), cleanup_mode_select)
+        .add_systems(Update, mode_select_button_system.run_if(in_state(AppState::ModeSelect)))
         .add_systems(Update, toggle_settings_menu)
         .add_systems(Update, (
             (

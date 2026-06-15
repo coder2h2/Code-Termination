@@ -372,23 +372,28 @@ pub fn has_dlc() -> bool {
     false
 }
 
-pub fn save_game(x: f32, y: f32, ram: u32, tutorial_visible: bool, level: u32) {
-    let content = format!("{},{},{},{},{}", x, y, ram, tutorial_visible, level);
+pub fn save_game(x: f32, y: f32, ram: u32, tutorial_visible: bool, level: u32, hacker_mode: bool) {
+    let content = format!("{},{},{},{},{},{}", x, y, ram, tutorial_visible, level, hacker_mode);
     if let Err(e) = std::fs::write("savegame.txt", content) {
         eprintln!("Failed to save game: {:?}", e);
     }
 }
 
-pub fn load_game() -> Option<(f32, f32, u32, bool, u32)> {
+pub fn load_game() -> Option<(f32, f32, u32, bool, u32, bool)> {
     if let Ok(content) = std::fs::read_to_string("savegame.txt") {
         let parts: Vec<&str> = content.trim().split(',').collect();
-        if parts.len() == 5 {
+        if parts.len() >= 5 {
             let x = parts[0].parse::<f32>().unwrap_or(-350.0);
             let y = parts[1].parse::<f32>().unwrap_or(GROUND_Y);
             let ram = parts[2].parse::<u32>().unwrap_or(6);
             let tutorial_visible = parts[3].parse::<bool>().unwrap_or(true);
             let level = parts[4].parse::<u32>().unwrap_or(1);
-            return Some((x, y, ram, tutorial_visible, level));
+            let hacker_mode = if parts.len() >= 6 {
+                parts[5].parse::<bool>().unwrap_or(false)
+            } else {
+                false
+            };
+            return Some((x, y, ram, tutorial_visible, level, hacker_mode));
         }
         // Fallback for older saves
         if parts.len() == 4 {
@@ -396,7 +401,7 @@ pub fn load_game() -> Option<(f32, f32, u32, bool, u32)> {
             let y = parts[1].parse::<f32>().unwrap_or(GROUND_Y);
             let ram = parts[2].parse::<u32>().unwrap_or(6);
             let tutorial_visible = parts[3].parse::<bool>().unwrap_or(true);
-            return Some((x, y, ram, tutorial_visible, 1));
+            return Some((x, y, ram, tutorial_visible, 1, false));
         }
     }
     None
@@ -406,6 +411,7 @@ pub fn setup_game_hud(
     commands: &mut Commands,
     tutorial_visible: bool,
     current_level: u32,
+    hacker_mode_active: bool,
 ) {
     if current_level == 4 {
         // Spawn Boss Health Bar container in the top-center
@@ -489,6 +495,21 @@ pub fn setup_game_hud(
                 ..default()
             },
         ));
+
+        if hacker_mode_active {
+            parent.spawn((
+                Text::new("H@CKER M0D3 ACTIVE"),
+                TextFont {
+                    font_size: 16.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(1.0, 0.0, 0.0)),
+                Node {
+                    margin: UiRect::bottom(Val::Px(10.0)),
+                    ..default()
+                },
+            ));
+        }
 
         if tutorial_visible {
             parent.spawn((
@@ -622,6 +643,7 @@ pub fn load_level(
     player_query: &mut Query<(&mut Transform, &mut Velocity, &mut JumpState, &mut DashState, &mut GlitchState, &mut RamState), (With<Player>, Without<GatewayConsole>)>,
     hud_query: &Query<Entity, With<GameHUD>>,
     tutorial_state: &TutorialState,
+    hacker_mode_active: bool,
 ) {
     // 1. Despawn old level entities
     for entity in level_entity_query {
@@ -632,7 +654,7 @@ pub fn load_level(
         commands.entity(entity).despawn();
     }
     // 3. Spawn new HUD
-    setup_game_hud(&mut commands, tutorial_state.visible, level);
+    setup_game_hud(&mut commands, tutorial_state.visible, level, hacker_mode_active);
 
     // 4. Reset player position and status
     for (mut transform, mut velocity, mut jump_state, mut dash_state, mut glitch_state, mut ram_state) in player_query {
@@ -743,7 +765,7 @@ pub fn load_level(
                     is_destroyed: false,
                 },
                 Boss {
-                    health: 3,
+                    health: if hacker_mode_active { 6 } else { 3 },
                     invulnerable_timer: 0.0,
                     state: BossAttackState::Intro,
                     state_timer: 2.0,

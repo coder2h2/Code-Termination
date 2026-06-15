@@ -6,6 +6,7 @@ pub fn setup_title_screen(
     mut commands: Commands,
     hud_query: Query<Entity, With<GameHUD>>,
     mut menu_selection: ResMut<MenuSelection>,
+    hacker_mode: Res<HackerMode>,
 ) {
     menu_selection.selected_index = 0;
     for entity in &hud_query {
@@ -36,10 +37,25 @@ pub fn setup_title_screen(
             },
             TextColor(Color::srgb(0.0, 1.0, 0.0)),
             Node {
-                margin: UiRect::bottom(Val::Px(40.0)),
+                margin: UiRect::bottom(Val::Px(if hacker_mode.active { 10.0 } else { 40.0 })),
                 ..default()
             },
         ));
+
+        if hacker_mode.active {
+            parent.spawn((
+                Text::new("H@CKER M0D3 ACTIVE"),
+                TextFont {
+                    font_size: 24.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(1.0, 0.0, 0.0)),
+                Node {
+                    margin: UiRect::bottom(Val::Px(30.0)),
+                    ..default()
+                },
+            ));
+        }
 
         // Play Button (Continue)
         parent.spawn((
@@ -285,7 +301,11 @@ pub fn title_button_system(
             }
             TitleButtonAction::NewGame => {
                 pending_load.should_load = false;
-                next_state.set(AppState::Game);
+                if crate::helpers::has_dlc() {
+                    next_state.set(AppState::ModeSelect);
+                } else {
+                    next_state.set(AppState::Game);
+                }
             }
             TitleButtonAction::Achievements => {
                 next_state.set(AppState::Achievements);

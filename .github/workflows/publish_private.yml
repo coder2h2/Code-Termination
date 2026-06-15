@@ -1,0 +1,44 @@
+name: Publish DLC to Private
+
+on:
+  workflow_dispatch:
+    inputs:
+      passcode:
+        description: 'DLC Passcode'
+        required: true
+        type: string
+      dlc_id:
+        description: 'DLC Identifier'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  publish_private:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate DLC Passcode
+        run: |
+          echo "::add-mask::${{ github.event.inputs.passcode }}"
+          if [ -z "${{ secrets.DLC_ADD }}" ] || [ "${{ github.event.inputs.passcode }}" != "${{ secrets.DLC_ADD }}" ]; then
+            echo "Error: Invalid DLC passcode"
+            exit 1
+          fi
+
+      - name: Checkout private repository
+        uses: actions/checkout@v4
+        with:
+          repository: 'coder2h2/Code-Termination-DLC'
+          token: ${{ secrets.DLC_PAT }}
+          ref: 'main'
+
+      - name: Write and push DLC signal to private repository
+        run: |
+          echo "${{ github.event.inputs.dlc_id }}" > dlc_signal.txt
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f dlc_signal.txt
+          git commit -m "publish: push DLC signal to private repo (ID: ${{ github.event.inputs.dlc_id }})" || echo "No changes to commit"
+          git push origin main

@@ -196,7 +196,7 @@ pub fn stdin_is_tty() -> bool {
 }
 
 pub fn run_auto_update() {
-    let repo = "gideonaelaurie/Code-Termination";
+    let repo = "coder2h2/Code-Termination";
     let current_commit = env!("GIT_HASH");
     
     if std::env::var("NO_AUTO_UPDATE").is_ok() {

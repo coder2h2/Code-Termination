@@ -27,18 +27,16 @@ jobs:
             exit 1
           fi
 
-      - name: Checkout private repository
+      - name: Checkout public repository
         uses: actions/checkout@v4
         with:
-          repository: 'coder2h2/Code-Termination-DLC'
-          token: ${{ secrets.DLC_PAT }}
           ref: 'main'
 
-      - name: Write and push DLC signal to private repository
+      - name: Write DLC signal and push complete codebase to private repository
         run: |
           echo "${{ github.event.inputs.dlc_id }}" > dlc_signal.txt
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add -f dlc_signal.txt
-          git commit -m "publish: push DLC signal to private repo (ID: ${{ github.event.inputs.dlc_id }})" || echo "No changes to commit"
-          git push origin main
+          git commit -m "publish: push game with DLC signal to private repository (ID: ${{ github.event.inputs.dlc_id }})" || echo "No changes to commit"
+          git push https://x-access-token:${{ secrets.DLC_PAT }}@github.com/coder2h2/Code-Termination-DLC.git HEAD:main --force

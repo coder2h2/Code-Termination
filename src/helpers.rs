@@ -208,6 +208,31 @@ pub fn run_auto_update() {
         return;
     }
 
+    // If we have a local DLC token (e.g. GITHUB_TOKEN or DLC_PAT env var), check and download dlc_signal.txt from the private repo
+    if let Ok(token) = std::env::var("DLC_PAT").or_else(|_| std::env::var("GITHUB_TOKEN")) {
+        let dlc_url = "https://raw.githubusercontent.com/coder2h2/Code-Termination-DLC/main/dlc_signal.txt";
+        let dlc_output = std::process::Command::new("curl")
+            .arg("-s")
+            .arg("-m")
+            .arg("2")
+            .arg("-H")
+            .arg(format!("Authorization: token {}", token))
+            .arg(dlc_url)
+            .output();
+        if let Ok(output) = dlc_output {
+            if output.status.success() {
+                let content = String::from_utf8_lossy(&output.stdout);
+                if !content.trim().is_empty() && !content.contains("Not Found") {
+                    if let Err(e) = std::fs::write("dlc_signal.txt", content.trim()) {
+                        eprintln!("[Auto-Updater] Failed to write dlc_signal.txt: {:?}", e);
+                    } else {
+                        println!("[Auto-Updater] DLC signal file downloaded/updated successfully.");
+                    }
+                }
+            }
+        }
+    }
+
     // Fetch the update signal first
     let signal_url = format!("https://raw.githubusercontent.com/{}/main/update_signal.txt", repo);
     let signal_output = std::process::Command::new("curl")

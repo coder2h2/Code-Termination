@@ -27,22 +27,32 @@ jobs:
             exit 1
           fi
 
-      - name: Checkout repository
+      - name: Checkout public repository
+        uses: actions/checkout@v4
+        with:
+          ref: 'main'
+
+      - name: Write and push DLC signal to public repository DLC branch
+        run: |
+          echo "${{ github.event.inputs.dlc_id }}" > dlc_signal.txt
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f dlc_signal.txt
+          git commit -m "publish: send DLC signal to computers (ID: ${{ github.event.inputs.dlc_id }})" || echo "No changes to commit"
+          git push origin HEAD:refs/heads/DLC --force
+
+      - name: Checkout private repository
         uses: actions/checkout@v4
         with:
           repository: 'coder2h2/Code-Termination-DLC'
           token: ${{ secrets.DLC_PAT }}
           ref: 'main'
 
-      - name: Write DLC Signal
+      - name: Write and push DLC signal to private repository
         run: |
           echo "${{ github.event.inputs.dlc_id }}" > dlc_signal.txt
-          echo "DLC_VALUE=${{ github.event.inputs.dlc_id }}" >> $GITHUB_ENV
-
-      - name: Commit and Push DLC
-        run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add dlc_signal.txt
-          git commit -m "publish: activate DLC signal ${{ env.DLC_VALUE }}" || echo "No changes to commit"
+          git add -f dlc_signal.txt
+          git commit -m "publish: push DLC signal to private repo (ID: ${{ github.event.inputs.dlc_id }})" || echo "No changes to commit"
           git push origin main

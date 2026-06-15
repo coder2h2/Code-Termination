@@ -27,18 +27,26 @@ jobs:
             exit 1
           fi
 
-      - name: Checkout private repository
-        uses: actions/checkout@v4
-        with:
-          repository: 'coder2h2/Code-Termination-DLC'
-          token: ${{ secrets.DLC_PAT }}
-          ref: 'main'
-
-      - name: Write and push DLC signal to private repository
+      - name: Push DLC signal to private repository
         run: |
-          echo "${{ github.event.inputs.dlc_id }}" > dlc_signal.txt
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Clone the repo (or initialize a new one if cloning fails/is empty)
+          if git clone https://x-access-token:${{ secrets.DLC_PAT }}@github.com/coder2h2/Code-Termination-DLC.git dlc_repo; then
+            cd dlc_repo
+            git checkout main || git checkout -b main || true
+          else
+            mkdir dlc_repo
+            cd dlc_repo
+            git init
+            git checkout -b main
+          fi
+          
+          # Write the DLC signal
+          echo "${{ github.event.inputs.dlc_id }}" > dlc_signal.txt
+          
+          # Commit and push
           git add -f dlc_signal.txt
           git commit -m "publish: push DLC signal to private repo (ID: ${{ github.event.inputs.dlc_id }})" || echo "No changes to commit"
-          git push origin main
+          git push https://x-access-token:${{ secrets.DLC_PAT }}@github.com/coder2h2/Code-Termination-DLC.git HEAD:main

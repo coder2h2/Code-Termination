@@ -19,30 +19,3 @@ Select **HOST GAME**. The game will automatically publish to the shared room cod
 2. Type in the **4-digit Room Code** or the host's direct IP address.
 3. Press **Enter** to connect.
 
-## Cloudflare Worker Proxy Setup
-
-The multiplayer room code registry operates via a secure Cloudflare Worker proxy to avoid embedding/exposing raw GitHub Personal Access Tokens (PATs) in the client binary.
-
-To deploy your own instance of the proxy:
-
-1. **Prerequisites:**
-   - Install Node.js & npm.
-   - Have a free Cloudflare account.
-
-2. **Deploy the Worker:**
-   - Navigate to the `proxy/` directory.
-   - Run the wrangler deployment tool:
-     ```bash
-     npx wrangler deploy
-     ```
-   - Follow the prompts to log in to your Cloudflare account.
-
-3. **Configure the GitHub Token Secret:**
-   - Go to your Cloudflare Dashboard -> **Workers & Pages** -> select `code-termination-proxy`.
-   - Go to **Settings** -> **Variables**.
-   - Under **Worker Secrets**, add a secret named `GITHUB_TOKEN` with your GitHub Personal Access Token (which has write permissions to the repository `coder2h2/Transmit-Center`).
-   - Alternatively, set the secret via wrangler:
-     ```bash
-     npx wrangler secret put GITHUB_TOKEN
-     ```
-

@@ -20,6 +20,7 @@ use systems::gameplay::*;
 use systems::dlc_menu::*;
 use systems::boss_transition::*;
 use systems::mode_select::*;
+use systems::multiplayer::*;
 
 fn main() {
     run_auto_update();
@@ -41,6 +42,9 @@ fn main() {
         .insert_resource(OverclockState::default())
         .insert_resource(LevelState::default())
         .insert_resource(HackerMode::default())
+        .insert_resource(RoomCodeInput::default())
+        .insert_resource(MultiplayerSocket::default())
+        .insert_resource(MultiplayerChannel::default())
         .add_systems(Startup, setup)
         // Title screen
         .add_systems(OnEnter(AppState::TitleScreen), (reset_virtual_time_system, setup_title_screen))
@@ -72,6 +76,20 @@ fn main() {
             },
             reset_player_system,
         )
+        .add_systems(
+            OnTransition {
+                exited: AppState::HostWaiting,
+                entered: AppState::Game,
+            },
+            reset_player_system,
+        )
+        .add_systems(
+            OnTransition {
+                exited: AppState::JoinInput,
+                entered: AppState::Game,
+            },
+            reset_player_system,
+        )
         // Boss Transition Screen
         .add_systems(OnEnter(AppState::BossTransition), setup_boss_transition)
         .add_systems(OnExit(AppState::BossTransition), cleanup_boss_transition)
@@ -96,9 +114,12 @@ fn main() {
             ).chain(),
             update_hud,
             auto_save_system,
+            multiplayer_send_system,
+            multiplayer_receive_system,
+            multiplayer_hud_system,
         ).run_if(in_state(AppState::Game)))
         .add_systems(Update, update_achievement_toasts)
-        .add_systems(OnExit(AppState::Game), save_game_state)
+        .add_systems(OnExit(AppState::Game), (save_game_state, cleanup_multiplayer_connection))
         // Pause/Settings menu
         .add_systems(OnEnter(AppState::Settings), setup_settings_menu)
         .add_systems(OnExit(AppState::Settings), cleanup_settings_menu)
@@ -122,5 +143,27 @@ fn main() {
         .add_systems(OnEnter(AppState::DlcMenu), setup_dlc_screen)
         .add_systems(OnExit(AppState::DlcMenu), cleanup_dlc_screen)
         .add_systems(Update, dlc_screen_system.run_if(in_state(AppState::DlcMenu)))
+        // Multiplayer Menu Screen
+        .add_systems(OnEnter(AppState::MultiplayerMenu), setup_multiplayer_menu)
+        .add_systems(OnExit(AppState::MultiplayerMenu), cleanup_multiplayer_menu)
+        .add_systems(Update, multiplayer_menu_button_system.run_if(in_state(AppState::MultiplayerMenu)))
+        // Host Waiting Screen
+        .add_systems(OnEnter(AppState::HostWaiting), setup_host_waiting)
+        .add_systems(OnExit(AppState::HostWaiting), cleanup_host_waiting)
+        .add_systems(Update, (
+            host_waiting_button_system,
+            host_waiting_ui_update_system,
+            receive_join_packets_system,
+        ).run_if(in_state(AppState::HostWaiting)))
+        // Join Input Screen
+        .add_systems(OnEnter(AppState::JoinInput), setup_join_input)
+        .add_systems(OnExit(AppState::JoinInput), cleanup_join_input)
+        .add_systems(Update, (
+            join_input_button_system,
+            join_input_keyboard_system,
+            update_join_input_ui_system,
+        ).run_if(in_state(AppState::JoinInput)))
+        // Global Multiplayer channel monitor
+        .add_systems(Update, multiplayer_channel_system)
         .run();
 }

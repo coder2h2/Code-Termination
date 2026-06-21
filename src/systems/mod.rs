@@ -9,3 +9,4 @@ pub mod gameplay;
 pub mod dlc_menu;
 pub mod boss_transition;
 pub mod mode_select;
+pub mod multiplayer;

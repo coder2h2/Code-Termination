@@ -40,6 +40,17 @@ pub enum AppState {
     DlcMenu,
     DeathScreen,
     DemoComplete,
+    MultiplayerMenu,
+    HostWaiting,
+    JoinInput,
+}
+
+#[derive(Resource, Default)]
+pub struct RoomCodeInput {
+    pub code: String,
+    pub status_message: String,
+    pub error_message: String,
+    pub is_connecting: bool,
 }
 
 #[derive(Resource, Clone, Copy, PartialEq, Eq)]

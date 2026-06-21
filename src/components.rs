@@ -171,9 +171,37 @@ pub struct TitleScreenUI;
 pub enum TitleButtonAction {
     Play,
     NewGame,
+    Multiplayer,
     Achievements,
     Dlc,
     Quit,
+}
+
+#[derive(Component)]
+pub struct RemotePlayer {
+    pub level: u32,
+    pub is_active: bool,
+}
+
+#[derive(Component)]
+pub struct MultiplayerHudText;
+
+#[derive(Component)]
+pub struct MultiplayerMenuUI;
+
+#[derive(Component)]
+pub struct HostWaitingUI;
+
+#[derive(Component)]
+pub struct JoinInputUI;
+
+#[derive(Component, Clone, Copy, PartialEq, Eq)]
+pub enum MultiplayerButtonAction {
+    Host,
+    Join,
+    Back,
+    CancelHost,
+    BackToMenu,
 }
 
 #[derive(Component)]

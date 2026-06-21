@@ -94,7 +94,7 @@ fn get_github_token() -> Option<String> {
 
 fn host_room_via_proxy(room_code: &str, ip_port: &str) -> Result<(), String> {
     let url = format!(
-        "https://code-termination-proxy.coder2h2.workers.dev/rooms/{}",
+        "https://code-termination-proxy.gideon-a-e-laurie.workers.dev/rooms/{}",
         room_code
     );
     
@@ -177,7 +177,7 @@ fn host_room_on_github(room_code: &str, ip_port: &str, token: &str) -> Result<()
 
 fn close_room_via_proxy(room_code: &str) {
     let url = format!(
-        "https://code-termination-proxy.coder2h2.workers.dev/rooms/{}",
+        "https://code-termination-proxy.gideon-a-e-laurie.workers.dev/rooms/{}",
         room_code
     );
     

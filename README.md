@@ -7,15 +7,42 @@ Sprite Makers needed for free please
 To play online multiplayer, go to the title screen and select **MULTIPLAYER**.
 
 ### Hosting a Game
-Select **HOST GAME**. The game will automatically publish to the shared room code registry and generate a **4-digit Room Code** that you can share with your friends. No setup or token export is required!
+Select **HOST GAME**. The game will automatically publish to the shared room code registry via a Cloudflare Worker proxy and generate a **4-digit Room Code** that you can share with your friends. No setup or token export is required!
 
-*(Optional: If you want to use your own custom GitHub registry token instead of the built-in one, you can export it as an environment variable `export DLC_PAT=your_token` before starting).*
+*(Optional: If you want to bypass the proxy and use your own custom GitHub registry token directly, you can export it as an environment variable `export DLC_PAT=your_token` before starting).*
 
 * **Direct Connect Fallback:**
-  If GitHub is unreachable or you prefer to connect directly, you can type in the host's direct public IP and port (e.g. `192.0.2.1:50505`) on the Join screen to connect.
+  If GitHub or the proxy is unreachable, or you prefer to connect directly, the hosting game will fall back to displaying `DIRECT (<ip>:<port>)`. You can type in the host's direct public IP and port (e.g. `192.0.2.1:50505`) on the Join screen to connect.
 
 ### Joining a Game
 1. Select **JOIN GAME**.
 2. Type in the **4-digit Room Code** or the host's direct IP address.
 3. Press **Enter** to connect.
+
+## Cloudflare Worker Proxy Setup
+
+The multiplayer room code registry operates via a secure Cloudflare Worker proxy to avoid embedding/exposing raw GitHub Personal Access Tokens (PATs) in the client binary.
+
+To deploy your own instance of the proxy:
+
+1. **Prerequisites:**
+   - Install Node.js & npm.
+   - Have a free Cloudflare account.
+
+2. **Deploy the Worker:**
+   - Navigate to the `proxy/` directory.
+   - Run the wrangler deployment tool:
+     ```bash
+     npx wrangler deploy
+     ```
+   - Follow the prompts to log in to your Cloudflare account.
+
+3. **Configure the GitHub Token Secret:**
+   - Go to your Cloudflare Dashboard -> **Workers & Pages** -> select `code-termination-proxy`.
+   - Go to **Settings** -> **Variables**.
+   - Under **Worker Secrets**, add a secret named `GITHUB_TOKEN` with your GitHub Personal Access Token (which has write permissions to the repository `coder2h2/Transmit-Center`).
+   - Alternatively, set the secret via wrangler:
+     ```bash
+     npx wrangler secret put GITHUB_TOKEN
+     ```
 

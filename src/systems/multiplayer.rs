@@ -89,21 +89,37 @@ fn base64_encode(bytes: &[u8]) -> String {
 
 // --- GitHub API Helpers ---
 fn get_github_token() -> Option<String> {
-    if let Ok(token) = std::env::var("DLC_PAT").or_else(|_| std::env::var("GITHUB_TOKEN")) {
-        Some(token)
-    } else {
-        // Fallback embedded token for room registry writes, obfuscated using XOR (0xAA)
-        // to prevent simple static string extraction and scanning tools.
-        let encrypted: [u8; 40] = [
-            205, 206, 210, 229, 219, 242, 238, 244, 188, 193, 230, 239, 205, 203, 243, 189,
-            204, 250, 210, 250, 212, 190, 191, 251, 237, 233, 203, 215, 191, 219, 234, 185,
-            237, 215, 170, 203, 225, 214, 207, 184
-        ];
-        let mut token = String::new();
-        for byte in encrypted {
-            token.push((byte ^ 0xAA) as char);
+    std::env::var("DLC_PAT").or_else(|_| std::env::var("GITHUB_TOKEN")).ok()
+}
+
+fn host_room_via_proxy(room_code: &str, ip_port: &str) -> Result<(), String> {
+    let url = format!(
+        "https://code-termination-proxy.coder2h2.workers.dev/rooms/{}",
+        room_code
+    );
+    
+    let output = std::process::Command::new("curl")
+        .arg("-X")
+        .arg("PUT")
+        .arg("-s")
+        .arg("-m")
+        .arg("6") // 6 seconds timeout
+        .arg("-d")
+        .arg(ip_port)
+        .arg(&url)
+        .output();
+        
+    match output {
+        Ok(out) => {
+            if out.status.success() {
+                Ok(())
+            } else {
+                let err = String::from_utf8_lossy(&out.stderr).to_string();
+                let body = String::from_utf8_lossy(&out.stdout).to_string();
+                Err(format!("Proxy error: {} {}", err, body))
+            }
         }
-        Some(token)
+        Err(e) => Err(format!("Failed to run curl: {:?}", e)),
     }
 }
 
@@ -159,8 +175,27 @@ fn host_room_on_github(room_code: &str, ip_port: &str, token: &str) -> Result<()
     }
 }
 
+fn close_room_via_proxy(room_code: &str) {
+    let url = format!(
+        "https://code-termination-proxy.coder2h2.workers.dev/rooms/{}",
+        room_code
+    );
+    
+    let _ = std::process::Command::new("curl")
+        .arg("-X")
+        .arg("DELETE")
+        .arg("-s")
+        .arg("-m")
+        .arg("6") // 6 seconds timeout
+        .arg(&url)
+        .output();
+}
+
 pub fn close_room_on_github(room_code: &str) {
-    let Some(token) = get_github_token() else { return; };
+    let Some(token) = get_github_token() else {
+        close_room_via_proxy(room_code);
+        return;
+    };
     let get_url = format!(
         "https://api.github.com/repos/coder2h2/Transmit-Center/contents/{}.txt",
         room_code
@@ -502,7 +537,7 @@ pub fn host_game_start(
         let bound_port = socket.local_addr().map(|a| a.port()).unwrap_or(port);
         let ip_port = format!("{}:{}", public_ip, bound_port);
         
-        // If developer has a token, register code on GitHub; otherwise fall back to direct connect
+        // If developer has a token, register code on GitHub; otherwise try proxy
         if let Some(token) = get_github_token() {
             let room_code = generate_room_code();
             match host_room_on_github(&room_code, &ip_port, &token) {
@@ -520,12 +555,22 @@ pub fn host_game_start(
                 }
             }
         } else {
-            // No token present: Fallback to direct connect
-            let _ = socket.set_nonblocking(true);
-            let _ = tx.send(MultiplayerEvent::HostSuccess { 
-                u_socket: socket, 
-                room_code: format!("DIRECT ({})", ip_port) 
-            });
+            // No token present: Try proxy
+            let room_code = generate_room_code();
+            match host_room_via_proxy(&room_code, &ip_port) {
+                Ok(_) => {
+                    let _ = socket.set_nonblocking(true);
+                    let _ = tx.send(MultiplayerEvent::HostSuccess { u_socket: socket, room_code });
+                }
+                Err(_) => {
+                    // Fallback to direct connection if proxy fails
+                    let _ = socket.set_nonblocking(true);
+                    let _ = tx.send(MultiplayerEvent::HostSuccess { 
+                        u_socket: socket, 
+                        room_code: format!("DIRECT ({})", ip_port) 
+                    });
+                }
+            }
         }
     });
     

@@ -7,17 +7,15 @@ Sprite Makers needed for free please
 To play online multiplayer, go to the title screen and select **MULTIPLAYER**.
 
 ### Hosting a Game
-* **With a Personal Access Token (PAT):**
-  If you have a GitHub Personal Access Token with write permission to the room registry (`coder2h2/Transmit-Center`), export it as an environment variable (`DLC_PAT` or `GITHUB_TOKEN`) before running the game:
-  ```bash
-  export DLC_PAT=your_github_token_here
-  ```
-  The game will generate a **4-digit Room Code** that you can share with your friends.
-  
-* **Without a PAT (Direct Connect):**
-  If you do not have a PAT, you can still host! The game will automatically fall back to direct connection mode. It will display **DIRECT CONNECT** and show your public **IP address and port** (e.g., `192.0.2.1:50505`). Simply share this address with your friends.
+Select **HOST GAME**. The game will automatically publish to the shared room code registry and generate a **4-digit Room Code** that you can share with your friends. No setup or token export is required!
+
+*(Optional: If you want to use your own custom GitHub registry token instead of the built-in one, you can export it as an environment variable `export DLC_PAT=your_token` before starting).*
+
+* **Direct Connect Fallback:**
+  If GitHub is unreachable or you prefer to connect directly, you can type in the host's direct public IP and port (e.g. `192.0.2.1:50505`) on the Join screen to connect.
 
 ### Joining a Game
-You do **not** need a PAT to join a game.
-* **Using a Room Code:** Enter the 4-digit room code using keyboard digits and press **Enter**.
-* **Using Direct Connect:** Type the host's direct IP address and port (including dots `.` and colons `:`) and press **Enter**.
+1. Select **JOIN GAME**.
+2. Type in the **4-digit Room Code** or the host's direct IP address.
+3. Press **Enter** to connect.
+

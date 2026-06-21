@@ -193,6 +193,9 @@ pub struct MultiplayerMenuUI;
 pub struct HostWaitingUI;
 
 #[derive(Component)]
+pub struct HostWaitingAddressText;
+
+#[derive(Component)]
 pub struct JoinInputUI;
 
 #[derive(Component, Clone, Copy, PartialEq, Eq)]

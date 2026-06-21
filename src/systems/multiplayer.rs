@@ -486,21 +486,31 @@ pub fn host_game_start(
         
         let bound_port = socket.local_addr().map(|a| a.port()).unwrap_or(port);
         let ip_port = format!("{}:{}", public_ip, bound_port);
-        let room_code = generate_room_code();
         
-        let Some(token) = get_github_token() else {
-            let _ = tx.send(MultiplayerEvent::HostFailure("DLC_PAT or GITHUB_TOKEN environment variable not set!".to_string()));
-            return;
-        };
-        
-        match host_room_on_github(&room_code, &ip_port, &token) {
-            Ok(_) => {
-                let _ = socket.set_nonblocking(true);
-                let _ = tx.send(MultiplayerEvent::HostSuccess { u_socket: socket, room_code });
+        // If developer has a token, register code on GitHub; otherwise fall back to direct connect
+        if let Some(token) = get_github_token() {
+            let room_code = generate_room_code();
+            match host_room_on_github(&room_code, &ip_port, &token) {
+                Ok(_) => {
+                    let _ = socket.set_nonblocking(true);
+                    let _ = tx.send(MultiplayerEvent::HostSuccess { u_socket: socket, room_code });
+                }
+                Err(_) => {
+                    // Fallback to direct connection if GitHub fails
+                    let _ = socket.set_nonblocking(true);
+                    let _ = tx.send(MultiplayerEvent::HostSuccess { 
+                        u_socket: socket, 
+                        room_code: format!("DIRECT ({})", ip_port)
+                    });
+                }
             }
-            Err(e) => {
-                let _ = tx.send(MultiplayerEvent::HostFailure(e));
-            }
+        } else {
+            // No token present: Fallback to direct connect
+            let _ = socket.set_nonblocking(true);
+            let _ = tx.send(MultiplayerEvent::HostSuccess { 
+                u_socket: socket, 
+                room_code: format!("DIRECT ({})", ip_port) 
+            });
         }
     });
     
@@ -567,6 +577,7 @@ pub fn setup_host_waiting(
         ));
 
         parent.spawn((
+            HostWaitingAddressText,
             Text::new("Waiting for a client process to connect..."),
             TextFont {
                 font_size: 18.0,
@@ -631,7 +642,9 @@ pub fn host_waiting_button_system(
             *bg_color = BackgroundColor(Color::srgb(0.3, 0.3, 0.4));
             if *action == MultiplayerButtonAction::CancelHost {
                 if let Some(ref data) = socket.data {
-                    close_room_on_github(&data.room_code);
+                    if !data.room_code.starts_with("DIRECT") {
+                        close_room_on_github(&data.room_code);
+                    }
                 }
                 socket.data = None;
                 next_state.set(AppState::MultiplayerMenu);
@@ -644,16 +657,34 @@ pub fn host_waiting_button_system(
 
 pub fn host_waiting_ui_update_system(
     socket: Res<MultiplayerSocket>,
-    mut text_query: Query<&mut Text, With<HostWaitingRoomCodeText>>,
+    mut code_query: Query<&mut Text, (With<HostWaitingRoomCodeText>, Without<HostWaitingAddressText>)>,
+    mut addr_query: Query<&mut Text, (With<HostWaitingAddressText>, Without<HostWaitingRoomCodeText>)>,
 ) {
-    if let Ok(mut text) = text_query.single_mut() {
-        if let Some(ref data) = socket.data {
+    let Some(ref data) = socket.data else { return; };
+    
+    if let Ok(mut text) = code_query.single_mut() {
+        if data.room_code.starts_with("DIRECT") {
+            if text.0 != "DIRECT CONNECT" {
+                text.0 = "DIRECT CONNECT".to_string();
+            }
+        } else {
             if text.0 != data.room_code {
                 text.0 = data.room_code.clone();
             }
+        }
+    }
+    
+    if let Ok(mut text) = addr_query.single_mut() {
+        if data.room_code.starts_with("DIRECT") {
+            let ip_port = data.room_code.replace("DIRECT (", "").replace(")", "");
+            let display = format!("Share this address with peer:\n{}", ip_port);
+            if text.0 != display {
+                text.0 = display;
+            }
         } else {
-            if text.0 != "CONNECTING TO GITHUB..." {
-                text.0 = "CONNECTING TO GITHUB...".to_string();
+            let display = "Waiting for peer to join...".to_string();
+            if text.0 != display {
+                text.0 = display;
             }
         }
     }
@@ -714,7 +745,7 @@ pub fn setup_join_input(
         ));
 
         parent.spawn((
-            Text::new("ENTER 4-DIGIT ROOM CODE:"),
+            Text::new("ENTER ROOM CODE OR DIRECT IP:"),
             TextFont {
                 font_size: 20.0,
                 ..default()
@@ -730,7 +761,7 @@ pub fn setup_join_input(
             JoinInputText,
             Text::new("_ _ _ _"),
             TextFont {
-                font_size: 48.0,
+                font_size: 36.0,
                 ..default()
             },
             TextColor(Color::srgb(0.0, 1.0, 1.0)),
@@ -840,10 +871,20 @@ pub fn join_input_keyboard_system(
     ];
 
     for (key, ch) in digits {
-        if keyboard.just_pressed(key) && code_input.code.len() < 4 {
+        if keyboard.just_pressed(key) && code_input.code.len() < 22 {
             code_input.code.push(ch);
             code_input.error_message.clear();
         }
+    }
+
+    if (keyboard.just_pressed(KeyCode::Period) || keyboard.just_pressed(KeyCode::NumpadDecimal)) && code_input.code.len() < 22 {
+        code_input.code.push('.');
+        code_input.error_message.clear();
+    }
+
+    if keyboard.just_pressed(KeyCode::Semicolon) && code_input.code.len() < 22 {
+        code_input.code.push(':');
+        code_input.error_message.clear();
     }
 
     if keyboard.just_pressed(KeyCode::Backspace) && !code_input.code.is_empty() {
@@ -851,9 +892,13 @@ pub fn join_input_keyboard_system(
         code_input.error_message.clear();
     }
 
-    if keyboard.just_pressed(KeyCode::Enter) && code_input.code.len() == 4 {
+    if keyboard.just_pressed(KeyCode::Enter) && !code_input.code.is_empty() {
         code_input.is_connecting = true;
-        code_input.status_message = "FETCHING ROOM ADDRESS...".to_string();
+        if code_input.code.contains('.') || code_input.code.contains(':') {
+            code_input.status_message = "CONNECTING DIRECTLY...".to_string();
+        } else {
+            code_input.status_message = "FETCHING ROOM ADDRESS...".to_string();
+        }
         join_game_start(code_input.code.clone(), channel);
     }
 }
@@ -868,11 +913,15 @@ pub fn join_game_start(
     }
     
     std::thread::spawn(move || {
-        let addr_str = match fetch_room_address(&room_code) {
-            Ok(a) => a,
-            Err(e) => {
-                let _ = tx.send(MultiplayerEvent::JoinFailure(e));
-                return;
+        let addr_str = if room_code.contains('.') || room_code.contains(':') {
+            room_code
+        } else {
+            match fetch_room_address(&room_code) {
+                Ok(a) => a,
+                Err(e) => {
+                    let _ = tx.send(MultiplayerEvent::JoinFailure(e));
+                    return;
+                }
             }
         };
         
@@ -899,7 +948,7 @@ pub fn join_game_start(
         };
         
         let _ = socket.set_nonblocking(true);
-        let _ = tx.send(MultiplayerEvent::JoinSuccess { u_socket: socket, peer_addr, room_code });
+        let _ = tx.send(MultiplayerEvent::JoinSuccess { u_socket: socket, peer_addr, room_code: addr_str });
     });
 }
 
@@ -910,18 +959,22 @@ pub fn update_join_input_ui_system(
 ) {
     if code_input.is_changed() {
         for mut text in &mut text_query {
-            let mut display = String::new();
-            for i in 0..4 {
-                if i < code_input.code.len() {
-                    display.push(code_input.code.chars().nth(i).unwrap());
-                } else {
-                    display.push('_');
+            if code_input.code.len() <= 4 && !code_input.code.contains('.') && !code_input.code.contains(':') {
+                let mut display = String::new();
+                for i in 0..4 {
+                    if i < code_input.code.len() {
+                        display.push(code_input.code.chars().nth(i).unwrap());
+                    } else {
+                        display.push('_');
+                    }
+                    if i < 3 {
+                        display.push(' ');
+                    }
                 }
-                if i < 3 {
-                    display.push(' ');
-                }
+                text.0 = display;
+            } else {
+                text.0 = code_input.code.clone();
             }
-            text.0 = display;
         }
 
         for mut status in &mut status_query {
@@ -929,10 +982,12 @@ pub fn update_join_input_ui_system(
                 status.0 = code_input.error_message.clone();
             } else if !code_input.status_message.is_empty() {
                 status.0 = code_input.status_message.clone();
+            } else if code_input.code.contains('.') || code_input.code.contains(':') {
+                status.0 = "Press ENTER to connect directly".to_string();
             } else if code_input.code.len() == 4 {
-                status.0 = "Press ENTER to join room".to_string();
+                status.0 = "Press ENTER to fetch room details".to_string();
             } else {
-                status.0 = "Type code using keyboard digits".to_string();
+                status.0 = "Type code or host IP/port".to_string();
             }
         }
     }
@@ -1115,9 +1170,11 @@ pub fn multiplayer_hud_system(
 
     let status_str = if data.is_connected || data.peer_addr.is_some() {
         let peer_level = remote_player_query.iter().next().map(|r| r.level).unwrap_or(1);
-        format!("MULTIPLAYER: CONNECTED | ROOM: {} | PEER LEVEL: {}", data.room_code, peer_level)
+        let code_label = if data.room_code.starts_with("DIRECT") { "DIRECT" } else { &data.room_code };
+        format!("MULTIPLAYER: CONNECTED | ROOM: {} | PEER LEVEL: {}", code_label, peer_level)
     } else {
-        format!("MULTIPLAYER: WAITING FOR PEER | ROOM: {}", data.room_code)
+        let code_label = if data.room_code.starts_with("DIRECT") { "DIRECT" } else { &data.room_code };
+        format!("MULTIPLAYER: WAITING FOR PEER | ROOM: {}", code_label)
     };
 
     if let Some(entity) = hud_text_query.iter().next() {
@@ -1146,7 +1203,7 @@ pub fn cleanup_multiplayer_connection(
     mut socket: ResMut<MultiplayerSocket>,
 ) {
     if let Some(ref data) = socket.data {
-        if data.is_host {
+        if data.is_host && !data.room_code.starts_with("DIRECT") {
             close_room_on_github(&data.room_code);
         }
     }

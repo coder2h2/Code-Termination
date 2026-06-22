@@ -847,6 +847,41 @@ pub fn save_user_profile(username: &str, uid: &str) {
     }
 }
 
+pub fn base64_encode(input: &str) -> String {
+    const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let bytes = input.as_bytes();
+    let mut result = String::with_capacity((bytes.len() + 2) / 3 * 4);
+    
+    let mut i = 0;
+    while i < bytes.len() {
+        let b0 = bytes[i];
+        let b1 = if i + 1 < bytes.len() { bytes[i + 1] } else { 0 };
+        let b2 = if i + 2 < bytes.len() { bytes[i + 2] } else { 0 };
+        
+        let val = ((b0 as u32) << 16) | ((b1 as u32) << 8) | (b2 as u32);
+        
+        let c0 = CHARSET[((val >> 18) & 0x3F) as usize] as char;
+        let c1 = CHARSET[((val >> 12) & 0x3F) as usize] as char;
+        let c2 = CHARSET[((val >> 6) & 0x3F) as usize] as char;
+        let c3 = CHARSET[(val & 0x3F) as usize] as char;
+        
+        result.push(c0);
+        result.push(c1);
+        if i + 1 < bytes.len() {
+            result.push(c2);
+        } else {
+            result.push('=');
+        }
+        if i + 2 < bytes.len() {
+            result.push(c3);
+        } else {
+            result.push('=');
+        }
+        i += 3;
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -854,8 +889,8 @@ mod tests {
     #[test]
     fn test_user_profile_and_uid_reversal() {
         let username = "GiddyUp15";
-        let uid = username.chars().rev().collect::<String>();
-        assert_eq!(uid, "51pUyddiG");
+        let uid = base64_encode(username);
+        assert_eq!(uid, "R2lkZHlVcDE1");
         
         save_user_profile(username, &uid);
         let loaded = load_user_profile().expect("Failed to load user profile");
@@ -863,7 +898,7 @@ mod tests {
         assert_eq!(loaded.1, uid);
         
         let new_name = "PlayerTwo";
-        let new_uid = new_name.chars().rev().collect::<String>();
+        let new_uid = base64_encode(new_name);
         save_user_profile(new_name, &new_uid);
         
         let loaded2 = load_user_profile().expect("Failed to load updated profile");

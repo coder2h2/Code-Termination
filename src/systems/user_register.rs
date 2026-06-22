@@ -214,7 +214,7 @@ pub fn user_register_button_system(
                 UserRegisterButtonAction::Register => {
                     let trimmed = username.trim();
                     if !trimmed.is_empty() {
-                        let uid = trimmed.chars().rev().collect::<String>();
+                        let uid = crate::helpers::base64_encode(trimmed);
                         save_user_profile(trimmed, &uid);
                         profile.username = trimmed.to_string();
                         profile.uid = uid;
@@ -249,7 +249,7 @@ pub fn user_register_keyboard_system(
             Key::Enter => {
                 let trimmed = username_input.trim();
                 if !trimmed.is_empty() {
-                    let uid = trimmed.chars().rev().collect::<String>();
+                    let uid = crate::helpers::base64_encode(trimmed);
                     save_user_profile(trimmed, &uid);
                     profile.username = trimmed.to_string();
                     profile.uid = uid;
@@ -496,7 +496,7 @@ pub fn user_name_change_button_system(
                 UserNameChangeButtonAction::Save => {
                     let trimmed = username.trim();
                     if !trimmed.is_empty() {
-                        let uid = trimmed.chars().rev().collect::<String>();
+                        let uid = crate::helpers::base64_encode(trimmed);
                         save_user_profile(trimmed, &uid);
                         profile.username = trimmed.to_string();
                         profile.uid = uid;
@@ -535,7 +535,7 @@ pub fn user_name_change_keyboard_system(
             Key::Enter => {
                 let trimmed = username_input.trim();
                 if !trimmed.is_empty() {
-                    let uid = trimmed.chars().rev().collect::<String>();
+                    let uid = crate::helpers::base64_encode(trimmed);
                     save_user_profile(trimmed, &uid);
                     profile.username = trimmed.to_string();
                     profile.uid = uid;

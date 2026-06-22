@@ -5,4 +5,4 @@ compatibility_date = "2026-06-21"
 [[d1_databases]]
 binding = "DB"
 database_name = "code_termination_db"
-database_id = "YOUR_D1_DATABASE_ID"
+database_id = "85eb438e-5c04-451c-87e1-8d8fe2936fc9"

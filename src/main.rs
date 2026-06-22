@@ -48,6 +48,7 @@ fn main() {
         .insert_resource(RoomCodeInput::default())
         .insert_resource(MultiplayerSocket::default())
         .insert_resource(MultiplayerChannel::default())
+        .insert_resource(ClientDiscoveryChannel::default())
         .insert_resource(CustomWeapon::default())
         .insert_resource(ScreenShake::default())
         .insert_resource(PlayerPowerUpState::default())

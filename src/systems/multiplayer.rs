@@ -12,6 +12,7 @@ pub struct MultiplayerSocketData {
     pub last_received: f32,
     pub is_connected: bool,
     pub is_battle: bool,
+    pub cancel_token: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 }
 
 #[derive(Resource, Default)]
@@ -28,6 +29,22 @@ impl Default for MultiplayerChannel {
     fn default() -> Self {
         Self {
             rx: std::sync::Mutex::new(None),
+        }
+    }
+}
+
+#[derive(Resource)]
+pub struct ClientDiscoveryChannel {
+    pub tx: std::sync::mpsc::Sender<SocketAddr>,
+    pub rx: std::sync::Mutex<std::sync::mpsc::Receiver<SocketAddr>>,
+}
+
+impl Default for ClientDiscoveryChannel {
+    fn default() -> Self {
+        let (tx, rx) = std::sync::mpsc::channel();
+        Self {
+            tx,
+            rx: std::sync::Mutex::new(rx),
         }
     }
 }
@@ -88,6 +105,106 @@ fn base64_encode(bytes: &[u8]) -> String {
         i += 3;
     }
     result
+}
+
+fn get_public_addr_from_stun(socket: &UdpSocket) -> Option<SocketAddr> {
+    let stun_servers = [
+        "stun.l.google.com:19302",
+        "stun1.l.google.com:19302",
+        "stun2.l.google.com:19302",
+        "stun3.l.google.com:19302",
+        "stun4.l.google.com:19302",
+    ];
+
+    let mut request = [0u8; 20];
+    request[0] = 0x00; request[1] = 0x01; // Message Type: Binding Request
+    request[2] = 0x00; request[3] = 0x00; // Message Length: 0
+    request[4] = 0x21; request[5] = 0x12; request[6] = 0xA4; request[7] = 0x42; // Magic Cookie
+    // Transaction ID (12 bytes)
+    for (i, val) in request.iter_mut().enumerate().skip(8) {
+        *val = i as u8;
+    }
+
+    let prev_timeout = socket.read_timeout().ok().flatten();
+    let _ = socket.set_read_timeout(Some(std::time::Duration::from_millis(800)));
+
+    for server in &stun_servers {
+        use std::net::ToSocketAddrs;
+        if let Ok(mut addrs) = server.to_socket_addrs() {
+            if let Some(server_addr) = addrs.next() {
+                if socket.send_to(&request, server_addr).is_err() {
+                    continue;
+                }
+
+                let mut response = [0u8; 512];
+                if let Ok((size, _)) = socket.recv_from(&mut response) {
+                    if size >= 20 {
+                        // Check message type (Binding Success Response: 0x0101)
+                        let msg_type = ((response[0] as u16) << 8) | (response[1] as u16);
+                        if msg_type == 0x0101 {
+                            // Check transaction ID matches
+                            if response[8..20] == request[8..20] {
+                                // Parse attributes
+                                let mut offset = 20;
+                                let msg_length = (((response[2] as usize) << 8) | (response[3] as usize)) + 20;
+                                let max_len = std::cmp::min(size, msg_length);
+
+                                while offset + 4 <= max_len {
+                                    let attr_type = ((response[offset] as u16) << 8) | (response[offset + 1] as u16);
+                                    let attr_len = ((response[offset + 2] as usize) << 8) | (response[offset + 3] as usize);
+                                    offset += 4;
+
+                                    if offset + attr_len > max_len {
+                                        break;
+                                    }
+
+                                    if attr_type == 0x0001 { // MAPPED-ADDRESS
+                                        if attr_len >= 8 {
+                                            let family = response[offset + 1];
+                                            if family == 0x01 { // IPv4
+                                                let port = ((response[offset + 2] as u16) << 8) | (response[offset + 3] as u16);
+                                                let ip = std::net::Ipv4Addr::new(
+                                                    response[offset + 4],
+                                                    response[offset + 5],
+                                                    response[offset + 6],
+                                                    response[offset + 7],
+                                                );
+                                                let _ = socket.set_read_timeout(prev_timeout);
+                                                return Some(SocketAddr::V4(std::net::SocketAddrV4::new(ip, port)));
+                                            }
+                                        }
+                                    } else if attr_type == 0x0020 { // XOR-MAPPED-ADDRESS
+                                        if attr_len >= 8 {
+                                            let family = response[offset + 1];
+                                            if family == 0x01 { // IPv4
+                                                let raw_port = ((response[offset + 2] as u16) << 8) | (response[offset + 3] as u16);
+                                                let port = raw_port ^ 0x2112; // XOR with magic cookie port part
+                                                let ip_bytes = [
+                                                    response[offset + 4] ^ 0x21,
+                                                    response[offset + 5] ^ 0x12,
+                                                    response[offset + 6] ^ 0xA4,
+                                                    response[offset + 7] ^ 0x42,
+                                                ];
+                                                let ip = std::net::Ipv4Addr::new(ip_bytes[0], ip_bytes[1], ip_bytes[2], ip_bytes[3]);
+                                                let _ = socket.set_read_timeout(prev_timeout);
+                                                return Some(SocketAddr::V4(std::net::SocketAddrV4::new(ip, port)));
+                                            }
+                                        }
+                                    }
+
+                                    // Attribute values are aligned on 4-byte boundaries
+                                    offset += (attr_len + 3) & !3;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let _ = socket.set_read_timeout(prev_timeout);
+    None
 }
 
 // --- GitHub API Helpers ---
@@ -544,24 +661,6 @@ pub fn host_game_start(
     }
     
     std::thread::spawn(move || {
-        // Query public IP address
-        let ip_output = std::process::Command::new("curl")
-            .arg("-s")
-            .arg("-m")
-            .arg("3")
-            .arg("https://api.ipify.org")
-            .output();
-            
-        let public_ip = if let Ok(out) = ip_output {
-            if out.status.success() {
-                String::from_utf8_lossy(&out.stdout).trim().to_string()
-            } else {
-                "127.0.0.1".to_string()
-            }
-        } else {
-            "127.0.0.1".to_string()
-        };
-        
         let port = 50505;
         let socket = match UdpSocket::bind(("0.0.0.0", port)) {
             Ok(s) => s,
@@ -577,7 +676,33 @@ pub fn host_game_start(
         };
         
         let bound_port = socket.local_addr().map(|a| a.port()).unwrap_or(port);
-        let mut ip_port = format!("{}:{}", public_ip, bound_port);
+        
+        // Query public IP address via STUN first
+        let stun_addr = get_public_addr_from_stun(&socket);
+        let public_addr_str = if let Some(addr) = stun_addr {
+            addr.to_string()
+        } else {
+            // Fallback: Query public IP address via curl
+            let ip_output = std::process::Command::new("curl")
+                .arg("-s")
+                .arg("-m")
+                .arg("3")
+                .arg("https://api.ipify.org")
+                .output();
+                
+            let public_ip = if let Ok(out) = ip_output {
+                if out.status.success() {
+                    String::from_utf8_lossy(&out.stdout).trim().to_string()
+                } else {
+                    "127.0.0.1".to_string()
+                }
+            } else {
+                "127.0.0.1".to_string()
+            };
+            format!("{}:{}", public_ip, bound_port)
+        };
+        
+        let mut ip_port = public_addr_str;
         if is_battle {
             ip_port.push_str("|BATTLE");
         }
@@ -751,6 +876,10 @@ pub fn host_waiting_button_system(
                 if let Some(ref data) = socket.data {
                     if !data.room_code.starts_with("DIRECT") {
                         close_room_on_github(&data.room_code);
+                        close_room_on_github(&format!("{}_client", data.room_code));
+                    }
+                    if let Some(ref token) = data.cancel_token {
+                        token.store(true, std::sync::atomic::Ordering::SeqCst);
                     }
                 }
                 socket.data = None;
@@ -800,8 +929,35 @@ pub fn host_waiting_ui_update_system(
 pub fn receive_join_packets_system(
     mut socket: ResMut<MultiplayerSocket>,
     mut next_state: ResMut<NextState<AppState>>,
+    discovery_channel: Res<ClientDiscoveryChannel>,
+    time: Res<Time>,
+    mut punch_timer: Local<f32>,
 ) {
     let Some(ref mut data) = socket.data else { return; };
+    
+    // 1. If we are the host and don't have peer_addr yet, try to retrieve it from the discovery channel
+    if data.is_host && data.peer_addr.is_none() {
+        if let Ok(rx) = discovery_channel.rx.lock() {
+            if let Ok(addr) = rx.try_recv() {
+                println!("[Multiplayer] Discovered client address: {}", addr);
+                data.peer_addr = Some(addr);
+            }
+        }
+    }
+    
+    // 2. If we have peer_addr but are not connected yet, host sends punch/ACK packets periodically
+    if data.is_host && data.peer_addr.is_some() && !data.is_connected {
+        *punch_timer += time.delta_secs();
+        if *punch_timer >= 0.2 {
+            *punch_timer = 0.0;
+            if let Some(peer_addr) = data.peer_addr {
+                // Send a PUNCH/ACK packet to punch a hole in host's NAT
+                let _ = data.socket.send_to(b"ACK", peer_addr);
+            }
+        }
+    }
+
+    // 3. Receive incoming packets
     let mut buf = [0u8; 1024];
     if let Ok((size, addr)) = data.socket.recv_from(&mut buf) {
         let msg = String::from_utf8_lossy(&buf[..size]);
@@ -1024,8 +1180,10 @@ pub fn join_game_start(
     }
     
     std::thread::spawn(move || {
-        let addr_str = if room_code.contains('.') || room_code.contains(':') {
-            room_code
+        let is_direct = room_code.contains('.') || room_code.contains(':');
+        
+        let addr_str = if is_direct {
+            room_code.clone()
         } else {
             match fetch_room_address(&room_code) {
                 Ok(a) => a,
@@ -1065,8 +1223,43 @@ pub fn join_game_start(
             }
         };
         
+        if !is_direct {
+            // Resolve the client's public mapped address via STUN
+            let stun_addr = get_public_addr_from_stun(&socket);
+            let client_public_addr_str = if let Some(addr) = stun_addr {
+                addr.to_string()
+            } else {
+                // Fallback: Query public IP address via curl
+                let ip_output = std::process::Command::new("curl")
+                    .arg("-s")
+                    .arg("-m")
+                    .arg("3")
+                    .arg("https://api.ipify.org")
+                    .output();
+                    
+                let public_ip = if let Ok(out) = ip_output {
+                    if out.status.success() {
+                        String::from_utf8_lossy(&out.stdout).trim().to_string()
+                    } else {
+                        "127.0.0.1".to_string()
+                    }
+                } else {
+                    "127.0.0.1".to_string()
+                };
+                let bound_port = socket.local_addr().map(|a| a.port()).unwrap_or(0);
+                format!("{}:{}", public_ip, bound_port)
+            };
+            
+            let client_room_code = format!("{}_client", room_code);
+            if let Some(token) = get_github_token() {
+                let _ = host_room_on_github(&client_room_code, &client_public_addr_str, &token);
+            } else {
+                let _ = host_room_via_proxy(&client_room_code, &client_public_addr_str);
+            }
+        }
+        
         let _ = socket.set_nonblocking(true);
-        let _ = tx.send(MultiplayerEvent::JoinSuccess { u_socket: socket, peer_addr, room_code: clean_addr, is_battle });
+        let _ = tx.send(MultiplayerEvent::JoinSuccess { u_socket: socket, peer_addr, room_code: if is_direct { room_code } else { clean_addr }, is_battle });
     });
 }
 
@@ -1116,6 +1309,7 @@ pub fn update_join_input_ui_system(
 pub fn multiplayer_channel_system(
     mut socket: ResMut<MultiplayerSocket>,
     channel: Res<MultiplayerChannel>,
+    discovery_channel: Res<ClientDiscoveryChannel>,
     mut next_state: ResMut<NextState<AppState>>,
     mut code_input: ResMut<RoomCodeInput>,
     time: Res<Time>,
@@ -1135,15 +1329,51 @@ pub fn multiplayer_channel_system(
     if let Some(event) = rx_taken {
         match event {
             MultiplayerEvent::HostSuccess { u_socket, room_code, is_battle } => {
+                let cancel_token = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                
                 socket.data = Some(MultiplayerSocketData {
                     socket: u_socket,
                     peer_addr: None,
                     is_host: true,
-                    room_code,
+                    room_code: room_code.clone(),
                     last_received: time.elapsed_secs(),
                     is_connected: false,
                     is_battle,
+                    cancel_token: Some(cancel_token.clone()),
                 });
+
+                // Spawn background thread to poll for client address if not direct connection
+                if !room_code.starts_with("DIRECT") {
+                    let tx_clone = discovery_channel.tx.clone();
+                    let room_code_clone = room_code.clone();
+                    std::thread::spawn(move || {
+                        for _ in 0..90 { // 3 minutes timeout
+                            std::thread::sleep(std::time::Duration::from_secs(2));
+                            if cancel_token.load(std::sync::atomic::Ordering::SeqCst) {
+                                break;
+                            }
+                            match fetch_room_address(&format!("{}_client", room_code_clone)) {
+                                Ok(addr_str) => {
+                                    let mut clean_addr = addr_str.clone();
+                                    if clean_addr.contains("|BATTLE") {
+                                        clean_addr = clean_addr.replace("|BATTLE", "");
+                                    }
+                                    if let Ok(addr) = clean_addr.parse::<SocketAddr>() {
+                                        let _ = tx_clone.send(addr);
+                                        break;
+                                    } else {
+                                        let raw_ip = format!("{}:50505", clean_addr.trim());
+                                        if let Ok(addr) = raw_ip.parse::<SocketAddr>() {
+                                            let _ = tx_clone.send(addr);
+                                            break;
+                                        }
+                                    }
+                                }
+                                Err(_) => {}
+                            }
+                        }
+                    });
+                }
             }
             MultiplayerEvent::HostFailure(err) => {
                 println!("[Multiplayer] Host failed: {}", err);
@@ -1158,6 +1388,7 @@ pub fn multiplayer_channel_system(
                     last_received: time.elapsed_secs(),
                     is_connected: false,
                     is_battle,
+                    cancel_token: None,
                 });
                 if is_battle {
                     next_state.set(AppState::BattleArena);
@@ -1359,8 +1590,16 @@ pub fn cleanup_multiplayer_connection(
     mut socket: ResMut<MultiplayerSocket>,
 ) {
     if let Some(ref data) = socket.data {
-        if data.is_host && !data.room_code.starts_with("DIRECT") {
-            close_room_on_github(&data.room_code);
+        if !data.room_code.starts_with("DIRECT") {
+            if data.is_host {
+                close_room_on_github(&data.room_code);
+                close_room_on_github(&format!("{}_client", data.room_code));
+            } else {
+                close_room_on_github(&format!("{}_client", data.room_code));
+            }
+        }
+        if let Some(ref token) = data.cancel_token {
+            token.store(true, std::sync::atomic::Ordering::SeqCst);
         }
     }
     socket.data = None;

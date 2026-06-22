@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS rooms (
+  code TEXT PRIMARY KEY,
+  ip_port TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);

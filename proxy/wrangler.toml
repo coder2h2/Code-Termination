@@ -2,6 +2,7 @@ name = "code-termination-proxy"
 main = "worker.js"
 compatibility_date = "2026-06-21"
 
-[[kv_namespaces]]
-binding = "ROOMS_KV"
-id = "a1b03887ea7d44bba8d5eca99711b5da"
+[[d1_databases]]
+binding = "DB"
+database_name = "code_termination_db"
+database_id = "YOUR_D1_DATABASE_ID"

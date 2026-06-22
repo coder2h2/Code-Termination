@@ -192,7 +192,7 @@ pub fn setup_title_screen(
             ));
         });
 
-        // Battle Arena Button
+        // Change Name Button
         parent.spawn((
             Button,
             Node {
@@ -205,17 +205,17 @@ pub fn setup_title_screen(
                 ..default()
             },
             BackgroundColor(Color::srgb(0.12, 0.12, 0.15)),
-            BorderColor::all(Color::srgb(0.0, 1.0, 0.0)),
-            TitleButtonAction::Battle,
+            BorderColor::all(Color::srgb(0.0, 1.0, 1.0)),
+            TitleButtonAction::ChangeName,
         ))
         .with_children(|btn| {
             btn.spawn((
-                Text::new("BATTLE ARENA"),
+                Text::new("CHANGE NAME"),
                 TextFont {
                     font_size: 24.0,
                     ..default()
                 },
-                TextColor(Color::srgb(0.0, 1.0, 1.0)), // Cyan for Battle Arena
+                TextColor(Color::srgb(0.0, 1.0, 1.0)),
             ));
         });
 
@@ -272,8 +272,9 @@ pub fn title_button_system(
         TitleButtonAction::Multiplayer => 2,
         TitleButtonAction::Achievements => 3,
         TitleButtonAction::Dlc => 4,
-        TitleButtonAction::Battle => 5,
-        TitleButtonAction::Quit => 6,
+        TitleButtonAction::ChangeName => 5,
+        TitleButtonAction::Battle => 6,
+        TitleButtonAction::Quit => 7,
     });
     let total_buttons = buttons.len();
 
@@ -373,7 +374,10 @@ pub fn title_button_system(
                 next_state.set(AppState::DlcMenu);
             }
             TitleButtonAction::Battle => {
-                next_state.set(AppState::WeaponDesigner);
+                next_state.set(AppState::BattleArena);
+            }
+            TitleButtonAction::ChangeName => {
+                next_state.set(AppState::UserNameChange);
             }
             TitleButtonAction::Quit => {
                 app_exit_events.write(AppExit::Success);

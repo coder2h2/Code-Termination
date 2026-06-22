@@ -32,6 +32,7 @@ impl Default for LevelState {
 pub enum AppState {
     #[default]
     TitleScreen,
+    UserRegister,
     ModeSelect,
     Game,
     BossTransition,
@@ -45,6 +46,7 @@ pub enum AppState {
     JoinInput,
     WeaponDesigner,
     BattleArena,
+    UserNameChange,
 }
 
 #[derive(Resource, Default)]
@@ -113,5 +115,23 @@ impl Default for CustomWeapon {
             shoot_cooldown: 0.0,
         }
     }
+}
+
+#[derive(Resource, Default)]
+pub struct ScreenShake {
+    pub intensity: f32,
+    pub duration: f32,
+}
+
+#[derive(Resource, Default)]
+pub struct PlayerPowerUpState {
+    pub overclock_timer: f32,
+    pub shield_timer: f32,
+}
+
+#[derive(Resource, Default, Clone)]
+pub struct UserProfile {
+    pub username: String,
+    pub uid: String,
 }
 

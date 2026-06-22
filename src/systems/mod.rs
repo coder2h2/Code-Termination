@@ -11,4 +11,5 @@ pub mod boss_transition;
 pub mod mode_select;
 pub mod multiplayer;
 pub mod battle;
+pub mod user_register;
 

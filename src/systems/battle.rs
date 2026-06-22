@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use crate::components::*;
 use crate::resources::*;
-use crate::constants::{PLAYER_SIZE, GROUND_Y, GROUND_SIZE};
+use crate::constants::{GROUND_Y, GROUND_SIZE};
 
 // Adjectives and nouns for weapon name generation
 const ADJECTIVES: &[&str] = &[
@@ -37,6 +37,7 @@ fn get_bullet_color(color_idx: u32) -> Color {
     }
 }
 
+#[allow(dead_code)]
 fn get_bullet_color_name(color_idx: u32) -> &'static str {
     match color_idx {
         0 => "CYAN",
@@ -55,6 +56,7 @@ pub struct BattleArenaState {
     pub survival_time: f32,
     pub wave: u32,
     pub health: u32,
+    pub high_score: u32,
 }
 
 impl Default for BattleArenaState {
@@ -65,14 +67,9 @@ impl Default for BattleArenaState {
             survival_time: 0.0,
             wave: 1,
             health: 10,
+            high_score: crate::helpers::load_battle_high_score(),
         }
     }
-}
-
-#[derive(Component)]
-pub struct BattleEnemy {
-    pub health: i32,
-    pub speed: f32,
 }
 
 // --- WEAPON DESIGNER SCREEN ---
@@ -712,9 +709,37 @@ pub fn update_weapon_designer_ui(
 pub fn setup_battle_arena(
     mut commands: Commands,
     mut custom_weapon: ResMut<CustomWeapon>,
+    mut player_query: Query<(
+        &mut Transform,
+        &mut Velocity,
+        &mut JumpState,
+        &mut DashState,
+        &mut GlitchState,
+        &mut RamState,
+        &mut Sprite,
+    ), With<Player>>,
 ) {
     commands.insert_resource(BattleArenaState::default());
     custom_weapon.shoot_cooldown = 0.0;
+
+    // Reset the existing persistent player specifically for the sandbox
+    for (
+        mut transform,
+        mut velocity,
+        mut jump_state,
+        mut dash_state,
+        mut glitch_state,
+        mut ram_state,
+        mut sprite,
+    ) in &mut player_query {
+        transform.translation = Vec3::new(0.0, GROUND_Y, 1.0);
+        velocity.0 = Vec2::ZERO;
+        *jump_state = JumpState::default();
+        *dash_state = DashState::default();
+        *glitch_state = GlitchState::default();
+        *ram_state = RamState::default();
+        sprite.color = Color::srgb(0.48, 0.86, 0.62);
+    }
 
     // Arena Background
     commands.spawn((
@@ -773,13 +798,13 @@ pub fn setup_battle_arena(
         .with_children(|bar| {
             bar.spawn((
                 BattleWeaponNameText,
-                Text::new(format!("WEAPON: {} (Color: {})", custom_weapon.name, get_bullet_color_name(custom_weapon.color_idx))),
+                Text::new("ATTACK PROTOCOL: DASH & SMASHDOWN"),
                 TextFont { font_size: 16.0, ..default() },
-                TextColor(Color::srgb(1.0, 1.0, 0.0)),
+                TextColor(Color::srgb(0.0, 1.0, 1.0)),
             ));
 
             bar.spawn((
-                Text::new("AIM: MOUSE CURSOR | SHOOT: LEFT-CLICK or F/J | JUMP: SPACE | BACK: ESC"),
+                Text::new("ATTACK: DASH (Double-tap A/D, Shift, or RMB/Trigger) | SMASHDOWN (S/Arrow-Down in air) | BACK: ESC"),
                 TextFont { font_size: 14.0, ..default() },
                 TextColor(Color::srgb(0.7, 0.7, 0.7)),
             ));
@@ -800,18 +825,33 @@ pub fn setup_battle_arena(
         BackgroundColor(Color::srgb(0.15, 0.15, 0.25)), // Cyberpunk grid texture style floor
     ));
 
-    // Spawn the player specifically for the sandbox (will auto cleanup on exit)
+    // Spawn Pillars (Walls that block horizontal movement)
     commands.spawn((
-        Player,
         LevelEntity,
-        Velocity(Vec2::ZERO),
-        JumpState::default(),
-        DashState::default(),
-        GlitchState::default(),
-        RamState::default(),
-        Sprite::from_color(Color::srgb(0.48, 0.86, 0.62), PLAYER_SIZE),
-        Transform::from_xyz(0.0, GROUND_Y, 1.0),
+        Wall,
+        Sprite::from_color(Color::srgb(0.0, 1.0, 1.0), Vec2::new(40.0, 160.0)),
+        Transform::from_xyz(-250.0, GROUND_Y + 80.0, 1.0),
     ));
+
+    commands.spawn((
+        LevelEntity,
+        Wall,
+        Sprite::from_color(Color::srgb(0.0, 1.0, 1.0), Vec2::new(40.0, 160.0)),
+        Transform::from_xyz(250.0, GROUND_Y + 80.0, 1.0),
+    ));
+
+    // Spawn Hazard Laser
+    commands.spawn((
+        LevelEntity,
+        BattleHazardLaser {
+            active_timer: 3.0,
+            is_active: false,
+        },
+        Sprite::from_color(Color::srgba(1.0, 0.1, 0.1, 0.15), Vec2::new(450.0, 6.0)),
+        Transform::from_xyz(0.0, GROUND_Y + 120.0, 1.0),
+    ));
+
+    commands.insert_resource(PlayerPowerUpState::default());
 }
 
 pub fn cleanup_battle_arena(
@@ -838,6 +878,7 @@ pub fn cleanup_battle_arena(
 }
 
 // Shooting system
+#[allow(dead_code)]
 pub fn battle_arena_shooting_system(
     mut commands: Commands,
     time: Res<Time>,
@@ -921,6 +962,7 @@ pub fn battle_arena_shooting_system(
 }
 
 // Bullet movement
+#[allow(dead_code)]
 pub fn bullet_movement_system(
     mut commands: Commands,
     time: Res<Time>,
@@ -961,13 +1003,29 @@ pub fn battle_arena_spawn_system(
         let seed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
         let left_side = (seed % 2) == 0;
         let x_pos = if left_side { -450.0 } else { 450.0 };
-        let speed = 80.0 + (state.wave as f32) * 15.0;
-        let health = 1 + (state.wave as i32) / 2; // Glitch health scales with waves
+        
+        let enemy_rand = (seed / 100) % 100;
+        let (enemy_type, health, speed, color) = if enemy_rand < 60 {
+            // Walker
+            (EnemyType::Walker, 1 + (state.wave as i32) / 2, 80.0 + (state.wave as f32) * 15.0, Color::srgb(1.0, 0.1, 0.4))
+        } else if enemy_rand < 85 {
+            // Shooter
+            (EnemyType::Shooter, 1 + (state.wave as i32) / 3, 60.0 + (state.wave as f32) * 10.0, Color::srgb(0.0, 0.8, 1.0))
+        } else {
+            // Charger
+            (EnemyType::Charger, 2 + (state.wave as i32) / 2, 90.0 + (state.wave as f32) * 12.0, Color::srgb(1.0, 0.8, 0.0))
+        };
 
         commands.spawn((
-            BattleEnemy { health, speed },
-            // Bright red/magenta glitch cube enemy representation
-            Sprite::from_color(Color::srgb(1.0, 0.1, 0.4), Vec2::new(24.0, 24.0)),
+            BattleEnemy {
+                health,
+                speed,
+                enemy_type,
+                state_timer: 1.5,
+                charge_dir: 0.0,
+                is_charging: false,
+            },
+            Sprite::from_color(color, Vec2::new(24.0, 24.0)),
             Transform::from_xyz(x_pos, GROUND_Y, 1.0),
         ));
     }
@@ -975,18 +1033,80 @@ pub fn battle_arena_spawn_system(
 
 // Enemy movement towards player
 pub fn battle_arena_enemy_movement_system(
+    mut commands: Commands,
     time: Res<Time>,
-    player_query: Query<&Transform, (With<Player>, Without<BattleEnemy>)>,
-    mut enemy_query: Query<(&mut Transform, &BattleEnemy)>,
+    player_query: Query<&Transform, (With<Player>, Without<BattleEnemy>, Without<EnemyProjectile>)>,
+    mut enemy_query: Query<(&mut Transform, &mut BattleEnemy, &mut Sprite)>,
 ) {
     let Ok(player_transform) = player_query.single() else { return; };
     let delta = time.delta_secs();
+    let player_x = player_transform.translation.x;
 
-    for (mut transform, enemy) in &mut enemy_query {
-        let player_x = player_transform.translation.x;
-        let diff_x = player_x - transform.translation.x;
-        let dir = diff_x.signum();
-        transform.translation.x += dir * enemy.speed * delta;
+    for (mut transform, mut enemy, mut sprite) in &mut enemy_query {
+        match enemy.enemy_type {
+            EnemyType::Walker => {
+                let diff_x = player_x - transform.translation.x;
+                let dir = diff_x.signum();
+                transform.translation.x += dir * enemy.speed * delta;
+            }
+            EnemyType::Shooter => {
+                let diff_x = player_x - transform.translation.x;
+                let dist_x = diff_x.abs();
+                
+                // Move towards player until within shooting range
+                if dist_x > 260.0 {
+                    let dir = diff_x.signum();
+                    transform.translation.x += dir * enemy.speed * delta;
+                } else if dist_x < 180.0 {
+                    // Retract if player is too close
+                    let dir = -diff_x.signum();
+                    transform.translation.x += dir * enemy.speed * delta;
+                }
+                
+                // Handle shooting
+                enemy.state_timer -= delta;
+                if enemy.state_timer <= 0.0 {
+                    enemy.state_timer = 2.0; // Shoot every 2 seconds
+                    
+                    // Spawn a projectile package
+                    let direction = diff_x.signum();
+                    let velocity = Vec2::new(direction * 180.0, 0.0);
+                    
+                    commands.spawn((
+                        LevelEntity,
+                        EnemyProjectile { velocity },
+                        Sprite::from_color(Color::srgb(0.0, 1.0, 1.0), Vec2::new(12.0, 12.0)),
+                        Transform::from_translation(transform.translation + Vec3::new(0.0, 0.0, 0.5)),
+                    ));
+                }
+            }
+            EnemyType::Charger => {
+                if enemy.is_charging {
+                    // Move very fast in the charge direction
+                    transform.translation.x += enemy.charge_dir * enemy.speed * 2.8 * delta;
+                    enemy.state_timer -= delta;
+                    if enemy.state_timer <= 0.0 {
+                        enemy.is_charging = false;
+                        enemy.state_timer = 2.5; // Cooldown before next charge
+                        sprite.color = Color::srgb(1.0, 0.8, 0.0); // Reset to Yellow
+                    }
+                } else {
+                    // Move normally towards player
+                    let diff_x = player_x - transform.translation.x;
+                    let dir = diff_x.signum();
+                    transform.translation.x += dir * enemy.speed * 0.8 * delta;
+                    
+                    enemy.state_timer -= delta;
+                    if enemy.state_timer <= 0.0 {
+                        // Telegraph charge! Stop and turn bright orange/red
+                        enemy.is_charging = true;
+                        enemy.charge_dir = dir;
+                        enemy.state_timer = 1.2; // Charge for 1.2 seconds
+                        sprite.color = Color::srgb(1.0, 0.2, 0.0); // Warning Red-Orange
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -995,45 +1115,114 @@ pub fn battle_arena_collision_system(
     mut commands: Commands,
     mut state: ResMut<BattleArenaState>,
     mut next_state: ResMut<NextState<AppState>>,
-    bullet_query: Query<(Entity, &Transform, &CustomBullet)>,
     mut enemy_query: Query<(Entity, &Transform, &mut BattleEnemy)>,
-    mut player_query: Query<(&Transform, &mut RamState), With<Player>>,
+    mut player_query: Query<(&Transform, &mut RamState, &DashState, &JumpState), With<Player>>,
+    proj_query: Query<(Entity, &Transform), With<EnemyProjectile>>,
+    mut shake: ResMut<ScreenShake>,
+    player_powerup_state: Res<PlayerPowerUpState>,
 ) {
-    // Bullet hitting enemies
-    for (b_entity, b_trans, bullet) in &bullet_query {
-        for (e_entity, e_trans, mut enemy) in &mut enemy_query {
-            let dist = b_trans.translation.distance(e_trans.translation);
-            if dist < 20.0 {
-                // Inflict damage based on designed weapon
-                enemy.health -= bullet.damage as i32;
-                commands.entity(b_entity).despawn();
+    let Ok((p_trans, mut ram_state, dash_state, jump_state)) = player_query.single_mut() else { return; };
+    let is_dashing = dash_state.dash_timer > 0.0;
+    let is_smashing = jump_state.is_smashing;
+    let is_attacking = is_dashing || is_smashing;
+    let has_shield = player_powerup_state.shield_timer > 0.0;
+    let is_invulnerable = is_attacking || has_shield || ram_state.invulnerability_timer > 0.0;
+
+    let p_pos = p_trans.translation;
+
+    // Enemy melee hits
+    for (e_entity, e_trans, mut enemy) in &mut enemy_query {
+        let dist = p_pos.distance(e_trans.translation);
+        if dist < 30.0 {
+            if is_attacking {
+                // Inflict damage based on attack mode
+                let damage = if is_smashing { 3 } else { 1 };
+                enemy.health -= damage;
 
                 if enemy.health <= 0 {
                     commands.entity(e_entity).despawn();
                     state.score += 10 * state.wave;
+                    
+                    // Spawn particles
+                    spawn_glitch_particles(&mut commands, e_trans.translation, 12);
+                    
+                    // Shake screen
+                    shake.intensity = 5.0;
+                    shake.duration = 0.2;
+                    
+                    // Drop PowerUp (25% chance)
+                    use std::time::{SystemTime, UNIX_EPOCH};
+                    let seed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+                    if (seed % 100) < 25 {
+                        let powerup_type = match (seed / 7) % 3 {
+                            0 => PowerUpType::HealthRecovery,
+                            1 => PowerUpType::OverclockBoost,
+                            _ => PowerUpType::GlitchShield,
+                        };
+                        
+                        let color = match powerup_type {
+                            PowerUpType::HealthRecovery => Color::srgb(1.0, 0.0, 0.0), // Red
+                            PowerUpType::OverclockBoost => Color::srgb(1.0, 0.8, 0.0), // Gold
+                            PowerUpType::GlitchShield => Color::srgb(0.0, 0.5, 1.0),    // Blue
+                        };
+                        
+                        commands.spawn((
+                            LevelEntity,
+                            PowerUp {
+                                power_up_type: powerup_type,
+                                duration: 8.0,
+                            },
+                            Sprite::from_color(color, Vec2::new(16.0, 16.0)),
+                            Transform::from_translation(e_trans.translation + Vec3::new(0.0, 10.0, 0.5)),
+                        ));
+                    }
                 }
-            }
-        }
-    }
-
-    // Enemies hitting player
-    if let Ok((p_trans, mut ram_state)) = player_query.single_mut() {
-        for (e_entity, e_trans, _) in &enemy_query {
-            let dist = p_trans.translation.distance(e_trans.translation);
-            if dist < 25.0 {
+            } else if !has_shield && ram_state.invulnerability_timer <= 0.0 {
                 // Hurt the player, despawn enemy
                 commands.entity(e_entity).despawn();
                 if state.health > 0 {
                     state.health -= 1;
                 }
                 ram_state.current = ram_state.current.saturating_sub(1);
+                ram_state.invulnerability_timer = 1.0;
+                
+                // Shake screen
+                shake.intensity = 10.0;
+                shake.duration = 0.3;
                 
                 if state.health == 0 {
-                    // System Crash! Battle Arena over, go back to designer
-                    next_state.set(AppState::WeaponDesigner);
+                    next_state.set(AppState::TitleScreen);
                 }
             }
         }
+    }
+
+    // Enemy projectile hits
+    for (proj_entity, proj_trans) in &proj_query {
+        let dist = p_pos.distance(proj_trans.translation);
+        if dist < 22.0 {
+            commands.entity(proj_entity).despawn();
+            if !is_invulnerable {
+                if state.health > 0 {
+                    state.health -= 1;
+                }
+                ram_state.current = ram_state.current.saturating_sub(1);
+                ram_state.invulnerability_timer = 1.0;
+                
+                shake.intensity = 10.0;
+                shake.duration = 0.3;
+                
+                if state.health == 0 {
+                    next_state.set(AppState::TitleScreen);
+                }
+            }
+        }
+    }
+
+    // High Score updates
+    if state.score > state.high_score {
+        state.high_score = state.score;
+        crate::helpers::save_battle_high_score(state.high_score);
     }
 }
 
@@ -1047,17 +1236,260 @@ pub fn battle_arena_ui_update_system(
     mut health_query: Query<&mut Text, (With<BattleHealthText>, Without<BattleScoreText>, Without<BattleTimerText>)>,
 ) {
     if keyboard.just_pressed(KeyCode::Escape) {
-        next_state.set(AppState::WeaponDesigner);
+        next_state.set(AppState::TitleScreen);
         return;
     }
 
     if let Ok(mut text) = score_query.single_mut() {
-        text.0 = format!("GLITCH SCORE: {}  (WAVE {})", state.score, state.wave);
+        text.0 = format!("SCORE: {} (HI: {}) | WAVE {}", state.score, state.high_score, state.wave);
     }
     if let Ok(mut text) = timer_query.single_mut() {
         text.0 = format!("ELAPSED TIME: {:.2}s", state.survival_time);
     }
     if let Ok(mut text) = health_query.single_mut() {
         text.0 = format!("SYSTEM INTEGRITY: {}/10", state.health);
+    }
+}
+
+// Glitch Particle Emitter helper
+pub fn spawn_glitch_particles(
+    commands: &mut Commands,
+    pos: Vec3,
+    count: usize,
+) {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let mut seed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+    
+    for _ in 0..count {
+        seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
+        let angle = (seed % 360) as f32 * std::f32::consts::PI / 180.0;
+        seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
+        let speed = 100.0 + (seed % 150) as f32;
+        let velocity = Vec2::new(angle.cos() * speed, angle.sin() * speed);
+        
+        seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
+        let lifetime = 0.3 + (seed % 4) as f32 * 0.1;
+        
+        let color_base = match seed % 4 {
+            0 => (0.0, 1.0, 1.0),      // Cyan
+            1 => (1.0, 0.0, 1.0),      // Pink
+            2 => (0.0, 1.0, 0.0),      // Lime
+            _ => (1.0, 1.0, 0.0),      // Yellow
+        };
+        
+        commands.spawn((
+            LevelEntity,
+            GlitchParticle {
+                velocity,
+                timer: lifetime,
+                initial_timer: lifetime,
+                color_base,
+            },
+            Sprite::from_color(
+                Color::srgba(color_base.0, color_base.1, color_base.2, 1.0),
+                Vec2::new(10.0, 10.0)
+            ),
+            Transform::from_translation(pos),
+        ));
+    }
+}
+
+// Particle updates
+pub fn particle_update_system(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut Transform, &mut GlitchParticle, &mut Sprite)>,
+) {
+    let delta = time.delta_secs();
+    for (entity, mut transform, mut particle, mut sprite) in &mut query {
+        particle.timer -= delta;
+        if particle.timer <= 0.0 {
+            commands.entity(entity).despawn();
+        } else {
+            transform.translation += particle.velocity.extend(0.0) * delta;
+            let alpha = (particle.timer / particle.initial_timer).clamp(0.0, 1.0);
+            sprite.color = Color::srgba(
+                particle.color_base.0,
+                particle.color_base.1,
+                particle.color_base.2,
+                alpha
+            );
+        }
+    }
+}
+
+// Camera Screenshake updater
+pub fn camera_shake_system(
+    time: Res<Time>,
+    mut shake: ResMut<ScreenShake>,
+    mut camera_query: Query<&mut Transform, With<Camera2d>>,
+) {
+    let delta = time.delta_secs();
+    if shake.duration > 0.0 {
+        shake.duration -= delta;
+        if shake.duration <= 0.0 {
+            shake.duration = 0.0;
+            shake.intensity = 0.0;
+            for mut trans in &mut camera_query {
+                trans.translation.x = 0.0;
+                trans.translation.y = 0.0;
+            }
+        } else {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let seed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+            let angle = (seed % 360) as f32 * std::f32::consts::PI / 180.0;
+            let offset_x = angle.cos() * shake.intensity;
+            let offset_y = angle.sin() * shake.intensity;
+            for mut trans in &mut camera_query {
+                trans.translation.x = offset_x;
+                trans.translation.y = offset_y;
+            }
+        }
+    }
+}
+
+// Enemy projectile physical moves
+pub fn enemy_projectile_movement_system(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut Transform, &EnemyProjectile)>,
+) {
+    let delta = time.delta_secs();
+    for (entity, mut transform, projectile) in &mut query {
+        transform.translation.x += projectile.velocity.x * delta;
+        if transform.translation.x.abs() > 800.0 {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
+// Hazard lasers logic
+pub fn battle_hazard_laser_system(
+    time: Res<Time>,
+    mut query: Query<(&mut BattleHazardLaser, &mut Sprite, &Transform)>,
+    mut player_query: Query<(&Transform, &mut RamState, &DashState, &JumpState), (With<Player>, Without<BattleHazardLaser>)>,
+    mut state: ResMut<BattleArenaState>,
+    mut next_state: ResMut<NextState<AppState>>,
+    mut shake: ResMut<ScreenShake>,
+) {
+    let delta = time.delta_secs();
+    let mut active_laser_y = None;
+    let mut active_laser_left = 0.0;
+    let mut active_laser_right = 0.0;
+    
+    for (mut laser, mut sprite, transform) in &mut query {
+        laser.active_timer -= delta;
+        if laser.active_timer <= 0.0 {
+            laser.is_active = !laser.is_active;
+            laser.active_timer = if laser.is_active { 2.5 } else { 3.5 };
+        }
+        
+        if laser.is_active {
+            let pulse = (time.elapsed_secs() * 25.0).sin().abs() * 0.4 + 0.6;
+            sprite.color = Color::srgba(1.0, 0.0, 0.0, pulse);
+            
+            let x = transform.translation.x;
+            let len = 450.0;
+            active_laser_y = Some(transform.translation.y);
+            active_laser_left = x - len / 2.0;
+            active_laser_right = x + len / 2.0;
+        } else {
+            let blink = (time.elapsed_secs() * 3.0).sin().abs() * 0.1 + 0.05;
+            sprite.color = Color::srgba(1.0, 0.0, 0.0, blink);
+        }
+    }
+    
+    if let Some(laser_y) = active_laser_y {
+        if let Ok((p_trans, mut ram_state, dash_state, jump_state)) = player_query.single_mut() {
+            let is_invulnerable = dash_state.dash_timer > 0.0 || jump_state.is_smashing || ram_state.invulnerability_timer > 0.0;
+            if !is_invulnerable {
+                let px = p_trans.translation.x;
+                let py = p_trans.translation.y;
+                let p_bottom = py - 48.0;
+                let p_top = py + 48.0;
+                
+                if px >= active_laser_left && px <= active_laser_right 
+                    && laser_y >= p_bottom && laser_y <= p_top 
+                {
+                    if state.health > 0 {
+                        state.health -= 1;
+                    }
+                    ram_state.current = ram_state.current.saturating_sub(1);
+                    ram_state.invulnerability_timer = 1.0;
+                    shake.intensity = 10.0;
+                    shake.duration = 0.3;
+                    
+                    if state.health == 0 {
+                        next_state.set(AppState::TitleScreen);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Powerup pickups & durations
+pub fn powerup_pickup_system(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut player_query: Query<(&Transform, &mut RamState, &mut Sprite, &mut DashState), (With<Player>, Without<PowerUp>)>,
+    mut powerup_query: Query<(Entity, &Transform, &mut PowerUp)>,
+    mut state: ResMut<BattleArenaState>,
+    mut player_powerup_state: ResMut<PlayerPowerUpState>,
+) {
+    let delta = time.delta_secs();
+    let Ok((p_trans, mut ram_state, mut sprite, mut dash_state)) = player_query.single_mut() else { return; };
+    
+    if player_powerup_state.overclock_timer > 0.0 {
+        player_powerup_state.overclock_timer -= delta;
+        if player_powerup_state.overclock_timer <= 0.0 {
+            player_powerup_state.overclock_timer = 0.0;
+            sprite.color = Color::srgb(0.48, 0.86, 0.62);
+        } else {
+            let pulse = (time.elapsed_secs() * 15.0).sin().abs() * 0.4 + 0.6;
+            sprite.color = Color::srgb(1.0 * pulse, 0.8 * pulse, 0.0);
+            dash_state.dash_timer = 0.0;
+            dash_state.air_dash_used = false;
+        }
+    }
+    
+    if player_powerup_state.shield_timer > 0.0 {
+        player_powerup_state.shield_timer -= delta;
+        if player_powerup_state.shield_timer <= 0.0 {
+            player_powerup_state.shield_timer = 0.0;
+            if player_powerup_state.overclock_timer == 0.0 {
+                sprite.color = Color::srgb(0.48, 0.86, 0.62);
+            }
+        } else {
+            if player_powerup_state.overclock_timer == 0.0 {
+                let pulse = (time.elapsed_secs() * 15.0).sin().abs() * 0.4 + 0.6;
+                sprite.color = Color::srgb(0.0, 0.5 * pulse, 1.0 * pulse);
+            }
+        }
+    }
+
+    for (entity, trans, mut powerup) in &mut powerup_query {
+        powerup.duration -= delta;
+        if powerup.duration <= 0.0 {
+            commands.entity(entity).despawn();
+            continue;
+        }
+        
+        let dist = p_trans.translation.distance(trans.translation);
+        if dist < 30.0 {
+            commands.entity(entity).despawn();
+            match powerup.power_up_type {
+                PowerUpType::HealthRecovery => {
+                    state.health = (state.health + 2).min(10);
+                    ram_state.current = (ram_state.current + 2).min(ram_state.max);
+                }
+                PowerUpType::OverclockBoost => {
+                    player_powerup_state.overclock_timer = 5.0;
+                }
+                PowerUpType::GlitchShield => {
+                    player_powerup_state.shield_timer = 5.0;
+                }
+            }
+        }
     }
 }

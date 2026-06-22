@@ -8,7 +8,7 @@ use bevy::prelude::*;
 use bevy::window::{WindowMode, MonitorSelection};
 
 use resources::*;
-use helpers::{load_achievements, run_auto_update};
+use helpers::{load_achievements, run_auto_update, load_user_profile};
 use systems::title_screen::*;
 use systems::achievements::*;
 use systems::settings::*;
@@ -22,6 +22,7 @@ use systems::boss_transition::*;
 use systems::mode_select::*;
 use systems::multiplayer::*;
 use systems::battle::*;
+use systems::user_register::*;
 
 
 fn main() {
@@ -48,7 +49,29 @@ fn main() {
         .insert_resource(MultiplayerSocket::default())
         .insert_resource(MultiplayerChannel::default())
         .insert_resource(CustomWeapon::default())
+        .insert_resource(ScreenShake::default())
+        .insert_resource(PlayerPowerUpState::default())
+        .insert_resource({
+            let profile = load_user_profile()
+                .map(|(username, uid)| UserProfile { username, uid })
+                .unwrap_or_default();
+            profile
+        })
         .add_systems(Startup, setup)
+        // User Registration Screen
+        .add_systems(OnEnter(AppState::UserRegister), setup_user_register)
+        .add_systems(OnExit(AppState::UserRegister), cleanup_user_register)
+        .add_systems(Update, (
+            user_register_button_system,
+            user_register_keyboard_system,
+        ).run_if(in_state(AppState::UserRegister)))
+        // User Name Change Screen
+        .add_systems(OnEnter(AppState::UserNameChange), setup_user_name_change)
+        .add_systems(OnExit(AppState::UserNameChange), cleanup_user_name_change)
+        .add_systems(Update, (
+            user_name_change_button_system,
+            user_name_change_keyboard_system,
+        ).run_if(in_state(AppState::UserNameChange)))
         // Title screen
         .add_systems(OnEnter(AppState::TitleScreen), (reset_virtual_time_system, setup_title_screen))
         .add_systems(OnExit(AppState::TitleScreen), cleanup_title_screen)
@@ -177,20 +200,26 @@ fn main() {
         ).run_if(in_state(AppState::WeaponDesigner)))
         // Battle Arena Sandbox Screen
         .add_systems(OnEnter(AppState::BattleArena), setup_battle_arena)
-        .add_systems(OnExit(AppState::BattleArena), cleanup_battle_arena)
+        .add_systems(OnExit(AppState::BattleArena), (cleanup_battle_arena, cleanup_multiplayer_connection))
         .add_systems(Update, (
             (
                 move_player,
                 jump_player,
                 apply_velocity,
                 update_glitch,
-                battle_arena_shooting_system,
-                bullet_movement_system,
                 battle_arena_spawn_system,
                 battle_arena_enemy_movement_system,
+                enemy_projectile_movement_system,
+                battle_hazard_laser_system,
+                powerup_pickup_system,
+                particle_update_system,
+                camera_shake_system,
                 battle_arena_collision_system,
             ).chain(),
             battle_arena_ui_update_system,
+            multiplayer_send_system,
+            multiplayer_receive_system,
+            multiplayer_hud_system,
         ).run_if(in_state(AppState::BattleArena)))
         .run();
 }

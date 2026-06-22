@@ -168,6 +168,7 @@ pub enum DeathScreenButtonAction {
 pub struct TitleScreenUI;
 
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum TitleButtonAction {
     Play,
     NewGame,
@@ -176,6 +177,22 @@ pub enum TitleButtonAction {
     Dlc,
     Quit,
     Battle,
+    ChangeName,
+}
+
+#[derive(Component)]
+pub struct UserNameChangeUI;
+
+#[derive(Component)]
+pub struct UserNameChangeInputText;
+
+#[derive(Component)]
+pub struct UserNameChangeStatusText;
+
+#[derive(Component, Clone, Copy, PartialEq, Eq)]
+pub enum UserNameChangeButtonAction {
+    Save,
+    Back,
 }
 
 #[derive(Component)]
@@ -202,10 +219,29 @@ pub struct JoinInputUI;
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
 pub enum MultiplayerButtonAction {
     Host,
+    HostBattle,
     Join,
     Back,
     CancelHost,
     BackToMenu,
+}
+
+#[derive(Component)]
+pub struct UserRegisterUI;
+
+#[derive(Component)]
+pub struct UserRegisterInputText;
+
+#[derive(Component)]
+pub struct UserRegisterStatusText;
+
+#[derive(Component)]
+pub struct RemotePlayerName;
+
+#[derive(Component, Clone, Copy, PartialEq, Eq)]
+pub enum UserRegisterButtonAction {
+    Register,
+    Quit,
 }
 
 #[derive(Component)]
@@ -249,6 +285,7 @@ pub struct WeaponDesignerUI;
 pub struct BattleArenaUI;
 
 #[derive(Component)]
+#[allow(dead_code)]
 pub struct CustomBullet {
     pub damage: u32,
     pub velocity: Vec2,
@@ -302,4 +339,53 @@ pub struct BattleHealthText;
 
 #[derive(Component)]
 pub struct BattleWeaponNameText;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum EnemyType {
+    Walker,
+    Shooter,
+    Charger,
+}
+
+#[derive(Component)]
+pub struct BattleEnemy {
+    pub health: i32,
+    pub speed: f32,
+    pub enemy_type: EnemyType,
+    pub state_timer: f32,
+    pub charge_dir: f32,
+    pub is_charging: bool,
+}
+
+#[derive(Component)]
+pub struct EnemyProjectile {
+    pub velocity: Vec2,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PowerUpType {
+    HealthRecovery,
+    OverclockBoost,
+    GlitchShield,
+}
+
+#[derive(Component)]
+pub struct PowerUp {
+    pub power_up_type: PowerUpType,
+    pub duration: f32,
+}
+
+#[derive(Component)]
+pub struct GlitchParticle {
+    pub velocity: Vec2,
+    pub timer: f32,
+    pub initial_timer: f32,
+    pub color_base: (f32, f32, f32),
+}
+
+#[derive(Component)]
+pub struct BattleHazardLaser {
+    pub active_timer: f32,
+    pub is_active: bool,
+}
 

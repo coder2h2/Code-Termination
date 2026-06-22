@@ -817,3 +817,59 @@ pub fn load_level(
         _ => {}
     }
 }
+
+pub fn load_battle_high_score() -> u32 {
+    if let Ok(content) = std::fs::read_to_string("battle_high_score.txt") {
+        content.trim().parse::<u32>().unwrap_or(0)
+    } else {
+        0
+    }
+}
+
+pub fn save_battle_high_score(score: u32) {
+    let _ = std::fs::write("battle_high_score.txt", score.to_string());
+}
+
+pub fn load_user_profile() -> Option<(String, String)> {
+    if let Ok(content) = std::fs::read_to_string("user_profile.txt") {
+        let parts: Vec<&str> = content.trim().split(',').collect();
+        if parts.len() == 2 {
+            return Some((parts[0].to_string(), parts[1].to_string()));
+        }
+    }
+    None
+}
+
+pub fn save_user_profile(username: &str, uid: &str) {
+    let content = format!("{},{}", username, uid);
+    if let Err(e) = std::fs::write("user_profile.txt", content) {
+        eprintln!("Failed to save user profile: {:?}", e);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_user_profile_and_uid_reversal() {
+        let username = "GiddyUp15";
+        let uid = username.chars().rev().collect::<String>();
+        assert_eq!(uid, "51pUyddiG");
+        
+        save_user_profile(username, &uid);
+        let loaded = load_user_profile().expect("Failed to load user profile");
+        assert_eq!(loaded.0, username);
+        assert_eq!(loaded.1, uid);
+        
+        let new_name = "PlayerTwo";
+        let new_uid = new_name.chars().rev().collect::<String>();
+        save_user_profile(new_name, &new_uid);
+        
+        let loaded2 = load_user_profile().expect("Failed to load updated profile");
+        assert_eq!(loaded2.0, new_name);
+        assert_eq!(loaded2.1, new_uid);
+        
+        let _ = std::fs::remove_file("user_profile.txt");
+    }
+}

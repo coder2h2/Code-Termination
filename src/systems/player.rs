@@ -204,6 +204,7 @@ pub fn move_player(
     >,
     level_state: Res<LevelState>,
     overclock: Res<OverclockState>,
+    state: Res<State<AppState>>,
 ) {
     let now = time.elapsed_secs();
     let delta = time.delta_secs();
@@ -273,7 +274,7 @@ pub fn move_player(
             dash_state.last_d_press = now;
         }
 
-        if level_state.current_level < 3 {
+        if level_state.current_level < 3 && *state.get() != AppState::BattleArena {
             should_dash = false;
         }
 
@@ -373,6 +374,7 @@ pub fn jump_player(
 pub fn apply_velocity(
     time: Res<Time>,
     mut player_query: Query<(&mut Transform, &mut Velocity, &mut JumpState, &mut DashState), With<Player>>,
+    mut shake: Option<ResMut<ScreenShake>>,
 ) {
     for (mut transform, mut velocity, mut jump_state, mut dash_state) in &mut player_query {
         if dash_state.dash_timer > 0.0 {
@@ -390,8 +392,16 @@ pub fn apply_velocity(
             transform.translation.y = GROUND_Y;
             velocity.0.y = 0.0;
             jump_state.jumps_remaining = jump_state.max_jumps;
+            let landed_smash = jump_state.is_smashing;
             jump_state.is_smashing = false;
             dash_state.air_dash_used = false;
+            
+            if landed_smash {
+                if let Some(ref mut s) = shake {
+                    s.intensity = 12.0;
+                    s.duration = 0.3;
+                }
+            }
         }
     }
 }

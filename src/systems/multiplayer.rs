@@ -11,6 +11,7 @@ pub struct MultiplayerSocketData {
     pub room_code: String,
     pub last_received: f32,
     pub is_connected: bool,
+    pub is_battle: bool,
 }
 
 #[derive(Resource, Default)]
@@ -35,12 +36,14 @@ pub enum MultiplayerEvent {
     HostSuccess {
         u_socket: UdpSocket,
         room_code: String,
+        is_battle: bool,
     },
     HostFailure(String),
     JoinSuccess {
         u_socket: UdpSocket,
         peer_addr: SocketAddr,
         room_code: String,
+        is_battle: bool,
     },
     JoinFailure(String),
 }
@@ -332,6 +335,33 @@ pub fn setup_multiplayer_menu(
             ));
         });
 
+        // Host Battle Button
+        parent.spawn((
+            Button,
+            Node {
+                width: Val::Px(320.0),
+                height: Val::Px(55.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                border: UiRect::all(Val::Px(2.0)),
+                margin: UiRect::bottom(Val::Px(15.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgb(0.12, 0.12, 0.15)),
+            BorderColor::all(Color::srgb(0.0, 1.0, 1.0)), // Cyan border for battle
+            MultiplayerButtonAction::HostBattle,
+        ))
+        .with_children(|btn| {
+            btn.spawn((
+                Text::new("HOST BATTLE ROOM"),
+                TextFont {
+                    font_size: 20.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.0, 1.0, 1.0)), // Cyan text
+            ));
+        });
+
         // Join Button
         parent.spawn((
             Button,
@@ -406,23 +436,25 @@ pub fn multiplayer_menu_button_system(
     gamepads: Query<&Gamepad>,
     mut stick_neutral: Local<bool>,
     channel: Res<MultiplayerChannel>,
+    profile: Res<UserProfile>,
 ) {
     let mut buttons = button_query.iter_mut().collect::<Vec<_>>();
     buttons.sort_by_key(|(_, _, action, _)| match action {
         MultiplayerButtonAction::Host => 0,
-        MultiplayerButtonAction::Join => 1,
-        MultiplayerButtonAction::Back => 2,
-        _ => 3,
+        MultiplayerButtonAction::HostBattle => 1,
+        MultiplayerButtonAction::Join => 2,
+        MultiplayerButtonAction::Back => 3,
+        _ => 4,
     });
     let total_buttons = buttons.len();
-
+ 
     let mut up = false;
     let mut down = false;
     for gamepad in &gamepads {
         if gamepad.just_pressed(GamepadButton::DPadUp) { up = true; }
         if gamepad.just_pressed(GamepadButton::DPadDown) { down = true; }
     }
-
+ 
     let mut stick_up = false;
     let mut stick_down = false;
     let mut any_active = false;
@@ -438,7 +470,7 @@ pub fn multiplayer_menu_button_system(
         }
     }
     if any_active { *stick_neutral = false; } else { *stick_neutral = true; }
-
+ 
     if total_buttons > 0 {
         if up || stick_up {
             menu_selection.selected_index = if menu_selection.selected_index == 0 {
@@ -451,13 +483,13 @@ pub fn multiplayer_menu_button_system(
             menu_selection.selected_index = (menu_selection.selected_index + 1) % total_buttons;
         }
     }
-
+ 
     for (index, (_, interaction, _, _)) in buttons.iter().enumerate() {
         if *interaction == &Interaction::Hovered {
             menu_selection.selected_index = index;
         }
     }
-
+ 
     let gp_select = gamepads.iter().any(|g| g.just_pressed(GamepadButton::East));
     let mut trigger_action = None;
     for (index, (_, interaction, action, _)) in buttons.iter().enumerate() {
@@ -465,7 +497,7 @@ pub fn multiplayer_menu_button_system(
             trigger_action = Some(*action);
         }
     }
-
+ 
     for (index, (_, interaction, _, mut bg_color)) in buttons.into_iter().enumerate() {
         if *interaction == Interaction::Pressed {
             *bg_color = BackgroundColor(Color::srgb(0.3, 0.3, 0.4));
@@ -475,11 +507,20 @@ pub fn multiplayer_menu_button_system(
             *bg_color = BackgroundColor(Color::srgb(0.12, 0.12, 0.15));
         }
     }
-
+ 
     if let Some(action) = trigger_action {
+        if *action == MultiplayerButtonAction::Host || *action == MultiplayerButtonAction::HostBattle || *action == MultiplayerButtonAction::Join {
+            if profile.username.is_empty() {
+                next_state.set(AppState::UserRegister);
+                return;
+            }
+        }
         match action {
             MultiplayerButtonAction::Host => {
-                host_game_start(channel, next_state);
+                host_game_start(channel, next_state, false);
+            }
+            MultiplayerButtonAction::HostBattle => {
+                host_game_start(channel, next_state, true);
             }
             MultiplayerButtonAction::Join => {
                 next_state.set(AppState::JoinInput);
@@ -495,6 +536,7 @@ pub fn multiplayer_menu_button_system(
 pub fn host_game_start(
     channel: Res<MultiplayerChannel>,
     mut next_state: ResMut<NextState<AppState>>,
+    is_battle: bool,
 ) {
     let (tx, rx) = std::sync::mpsc::channel();
     if let Ok(mut rx_opt) = channel.rx.lock() {
@@ -535,7 +577,10 @@ pub fn host_game_start(
         };
         
         let bound_port = socket.local_addr().map(|a| a.port()).unwrap_or(port);
-        let ip_port = format!("{}:{}", public_ip, bound_port);
+        let mut ip_port = format!("{}:{}", public_ip, bound_port);
+        if is_battle {
+            ip_port.push_str("|BATTLE");
+        }
         
         // If developer has a token, register code on GitHub; otherwise try proxy
         if let Some(token) = get_github_token() {
@@ -543,14 +588,15 @@ pub fn host_game_start(
             match host_room_on_github(&room_code, &ip_port, &token) {
                 Ok(_) => {
                     let _ = socket.set_nonblocking(true);
-                    let _ = tx.send(MultiplayerEvent::HostSuccess { u_socket: socket, room_code });
+                    let _ = tx.send(MultiplayerEvent::HostSuccess { u_socket: socket, room_code, is_battle });
                 }
                 Err(_) => {
                     // Fallback to direct connection if GitHub fails
                     let _ = socket.set_nonblocking(true);
                     let _ = tx.send(MultiplayerEvent::HostSuccess { 
                         u_socket: socket, 
-                        room_code: format!("DIRECT ({})", ip_port)
+                        room_code: format!("DIRECT ({})", ip_port),
+                        is_battle,
                     });
                 }
             }
@@ -560,14 +606,15 @@ pub fn host_game_start(
             match host_room_via_proxy(&room_code, &ip_port) {
                 Ok(_) => {
                     let _ = socket.set_nonblocking(true);
-                    let _ = tx.send(MultiplayerEvent::HostSuccess { u_socket: socket, room_code });
+                    let _ = tx.send(MultiplayerEvent::HostSuccess { u_socket: socket, room_code, is_battle });
                 }
                 Err(_) => {
                     // Fallback to direct connection if proxy fails
                     let _ = socket.set_nonblocking(true);
                     let _ = tx.send(MultiplayerEvent::HostSuccess { 
                         u_socket: socket, 
-                        room_code: format!("DIRECT ({})", ip_port) 
+                        room_code: format!("DIRECT ({})", ip_port),
+                        is_battle,
                     });
                 }
             }
@@ -764,7 +811,11 @@ pub fn receive_join_packets_system(
             for _ in 0..5 {
                 let _ = data.socket.send_to(b"ACK", addr);
             }
-            next_state.set(AppState::Game);
+            if data.is_battle {
+                next_state.set(AppState::BattleArena);
+            } else {
+                next_state.set(AppState::Game);
+            }
         }
     }
 }
@@ -985,10 +1036,17 @@ pub fn join_game_start(
             }
         };
         
-        let peer_addr = match addr_str.parse::<SocketAddr>() {
+        let mut clean_addr = addr_str.clone();
+        let mut is_battle = false;
+        if clean_addr.contains("|BATTLE") {
+            is_battle = true;
+            clean_addr = clean_addr.replace("|BATTLE", "");
+        }
+        
+        let peer_addr = match clean_addr.parse::<SocketAddr>() {
             Ok(addr) => addr,
             Err(_) => {
-                let raw_ip = format!("{}:50505", addr_str.trim());
+                let raw_ip = format!("{}:50505", clean_addr.trim());
                 match raw_ip.parse::<SocketAddr>() {
                     Ok(addr) => addr,
                     Err(e) => {
@@ -1008,7 +1066,7 @@ pub fn join_game_start(
         };
         
         let _ = socket.set_nonblocking(true);
-        let _ = tx.send(MultiplayerEvent::JoinSuccess { u_socket: socket, peer_addr, room_code: addr_str });
+        let _ = tx.send(MultiplayerEvent::JoinSuccess { u_socket: socket, peer_addr, room_code: clean_addr, is_battle });
     });
 }
 
@@ -1076,7 +1134,7 @@ pub fn multiplayer_channel_system(
 
     if let Some(event) = rx_taken {
         match event {
-            MultiplayerEvent::HostSuccess { u_socket, room_code } => {
+            MultiplayerEvent::HostSuccess { u_socket, room_code, is_battle } => {
                 socket.data = Some(MultiplayerSocketData {
                     socket: u_socket,
                     peer_addr: None,
@@ -1084,13 +1142,14 @@ pub fn multiplayer_channel_system(
                     room_code,
                     last_received: time.elapsed_secs(),
                     is_connected: false,
+                    is_battle,
                 });
             }
             MultiplayerEvent::HostFailure(err) => {
                 println!("[Multiplayer] Host failed: {}", err);
                 next_state.set(AppState::MultiplayerMenu);
             }
-            MultiplayerEvent::JoinSuccess { u_socket, peer_addr, room_code } => {
+            MultiplayerEvent::JoinSuccess { u_socket, peer_addr, room_code, is_battle } => {
                 socket.data = Some(MultiplayerSocketData {
                     socket: u_socket,
                     peer_addr: Some(peer_addr),
@@ -1098,8 +1157,13 @@ pub fn multiplayer_channel_system(
                     room_code,
                     last_received: time.elapsed_secs(),
                     is_connected: false,
+                    is_battle,
                 });
-                next_state.set(AppState::Game);
+                if is_battle {
+                    next_state.set(AppState::BattleArena);
+                } else {
+                    next_state.set(AppState::Game);
+                }
             }
             MultiplayerEvent::JoinFailure(err) => {
                 println!("[Multiplayer] Join failed: {}", err);
@@ -1117,6 +1181,7 @@ pub fn multiplayer_send_system(
     socket: Res<MultiplayerSocket>,
     player_query: Query<(&Transform, &Sprite), With<Player>>,
     level_state: Res<LevelState>,
+    profile: Res<UserProfile>,
     time: Res<Time>,
     mut local_timer: Local<f32>,
 ) {
@@ -1142,7 +1207,7 @@ pub fn multiplayer_send_system(
             let y = transform.translation.y;
             let level = level_state.current_level;
             
-            let payload = format!("STATE {:.2} {:.2} {} 0 1", x, y, level);
+            let payload = format!("STATE {:.2} {:.2} {} 0 1 {}", x, y, level, profile.username);
             if let Some(peer_addr) = data.peer_addr {
                 let _ = data.socket.send_to(payload.as_bytes(), peer_addr);
             }
@@ -1154,6 +1219,7 @@ pub fn multiplayer_receive_system(
     mut commands: Commands,
     mut socket: ResMut<MultiplayerSocket>,
     mut remote_player_query: Query<(Entity, &mut Transform, &mut RemotePlayer)>,
+    mut remote_name_query: Query<(&ChildOf, &mut Text2d), With<RemotePlayerName>>,
     level_state: Res<LevelState>,
     time: Res<Time>,
 ) {
@@ -1185,10 +1251,11 @@ pub fn multiplayer_receive_system(
                     let rx_y = parts[2].parse::<f32>().unwrap_or(GROUND_Y);
                     let rx_level = parts[3].parse::<u32>().unwrap_or(1);
                     let rx_active = parts[5].parse::<u32>().unwrap_or(1) == 1;
+                    let rx_username = if parts.len() >= 7 { parts[6].to_string() } else { "Player".to_string() };
                     
                     let cur_level = level_state.current_level;
                     
-                    if let Some((_entity, mut transform, mut remote)) = remote_player_query.iter_mut().next() {
+                    if let Some((entity, mut transform, mut remote)) = remote_player_query.iter_mut().next() {
                         remote.level = rx_level;
                         remote.is_active = rx_active;
                         
@@ -1197,14 +1264,35 @@ pub fn multiplayer_receive_system(
                         } else {
                             transform.translation = Vec3::new(rx_x, -9999.0, 1.0);
                         }
+                        
+                        for (parent, mut text) in &mut remote_name_query {
+                            if parent.parent() == entity {
+                                if text.0 != rx_username {
+                                    text.0 = rx_username.clone();
+                                }
+                            }
+                        }
                     } else {
                         let start_y = if rx_level == cur_level && rx_active { rx_y } else { -9999.0 };
-                        commands.spawn((
+                        let parent_entity = commands.spawn((
                             LevelEntity, // automatically despawns on level change/reload
                             RemotePlayer { level: rx_level, is_active: rx_active },
                             Sprite::from_color(Color::srgb(1.0, 0.5, 0.0), PLAYER_SIZE), // Neon Orange Remote Player
                             Transform::from_xyz(rx_x, start_y, 1.0),
-                        ));
+                        )).id();
+                        
+                        commands.entity(parent_entity).with_children(|parent| {
+                            parent.spawn((
+                                RemotePlayerName,
+                                Text2d::new(rx_username.clone()),
+                                TextColor(Color::srgb(1.0, 0.8, 0.2)),
+                                TextFont {
+                                    font_size: 16.0,
+                                    ..default()
+                                },
+                                Transform::from_xyz(0.0, PLAYER_SIZE.y / 2.0 + 15.0, 2.0),
+                            ));
+                        });
                     }
                 }
             }
@@ -1231,10 +1319,18 @@ pub fn multiplayer_hud_system(
     let status_str = if data.is_connected || data.peer_addr.is_some() {
         let peer_level = remote_player_query.iter().next().map(|r| r.level).unwrap_or(1);
         let code_label = if data.room_code.starts_with("DIRECT") { "DIRECT" } else { &data.room_code };
-        format!("MULTIPLAYER: CONNECTED | ROOM: {} | PEER LEVEL: {}", code_label, peer_level)
+        if data.is_battle {
+            format!("MULTIPLAYER BATTLE: CONNECTED | ROOM: {}", code_label)
+        } else {
+            format!("MULTIPLAYER: CONNECTED | ROOM: {} | PEER LEVEL: {}", code_label, peer_level)
+        }
     } else {
         let code_label = if data.room_code.starts_with("DIRECT") { "DIRECT" } else { &data.room_code };
-        format!("MULTIPLAYER: WAITING FOR PEER | ROOM: {}", code_label)
+        if data.is_battle {
+            format!("MULTIPLAYER BATTLE: WAITING FOR PEER | ROOM: {}", code_label)
+        } else {
+            format!("MULTIPLAYER: WAITING FOR PEER | ROOM: {}", code_label)
+        }
     };
 
     if let Some(entity) = hud_text_query.iter().next() {

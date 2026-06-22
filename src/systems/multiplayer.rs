@@ -74,38 +74,7 @@ pub struct JoinStatusText;
 #[derive(Component)]
 pub struct HostWaitingRoomCodeText;
 
-// --- Base64 Encoder ---
-fn base64_encode(bytes: &[u8]) -> String {
-    const CHARSET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut result = String::new();
-    let mut i = 0;
-    while i < bytes.len() {
-        let b0 = bytes[i];
-        let b1 = if i + 1 < bytes.len() { Some(bytes[i + 1]) } else { None };
-        let b2 = if i + 2 < bytes.len() { Some(bytes[i + 2]) } else { None };
-        
-        let u24 = ((b0 as u32) << 16)
-            | ((b1.unwrap_or(0) as u32) << 8)
-            | (b2.unwrap_or(0) as u32);
-            
-        result.push(CHARSET[((u24 >> 18) & 63) as usize] as char);
-        result.push(CHARSET[((u24 >> 12) & 63) as usize] as char);
-        
-        if b1.is_some() {
-            result.push(CHARSET[((u24 >> 6) & 63) as usize] as char);
-        } else {
-            result.push('=');
-        }
-        
-        if b2.is_some() {
-            result.push(CHARSET[(u24 & 63) as usize] as char);
-        } else {
-            result.push('=');
-        }
-        i += 3;
-    }
-    result
-}
+
 
 fn get_public_addr_from_stun(socket: &UdpSocket) -> Option<SocketAddr> {
     let stun_servers = [
@@ -207,10 +176,7 @@ fn get_public_addr_from_stun(socket: &UdpSocket) -> Option<SocketAddr> {
     None
 }
 
-// --- GitHub API Helpers ---
-fn get_github_token() -> Option<String> {
-    std::env::var("DLC_PAT").or_else(|_| std::env::var("GITHUB_TOKEN")).ok()
-}
+
 
 fn host_room_via_proxy(room_code: &str, ip_port: &str) -> Result<(), String> {
     let url = format!(
@@ -253,47 +219,6 @@ fn generate_room_code() -> String {
     code.to_string()
 }
 
-fn host_room_on_github(room_code: &str, ip_port: &str, token: &str) -> Result<(), String> {
-    let payload = format!(
-        r#"{{"message":"Host room {}","content":"{}"}}"#,
-        room_code,
-        base64_encode(ip_port.as_bytes())
-    );
-    let url = format!(
-        "https://api.github.com/repos/coder2h2/Transmit-Center/contents/{}.txt",
-        room_code
-    );
-    
-    let output = std::process::Command::new("curl")
-        .arg("-X")
-        .arg("PUT")
-        .arg("-s")
-        .arg("-m")
-        .arg("5") // 5s timeout
-        .arg("-H")
-        .arg(format!("Authorization: token {}", token))
-        .arg("-H")
-        .arg("User-Agent: Code-Termination")
-        .arg("-H")
-        .arg("Content-Type: application/json")
-        .arg("-d")
-        .arg(payload)
-        .arg(&url)
-        .output();
-        
-    match output {
-        Ok(out) => {
-            if out.status.success() {
-                Ok(())
-            } else {
-                let err = String::from_utf8_lossy(&out.stderr).to_string();
-                let body = String::from_utf8_lossy(&out.stdout).to_string();
-                Err(format!("GitHub API error: {} {}", err, body))
-            }
-        }
-        Err(e) => Err(format!("Failed to run curl: {:?}", e)),
-    }
-}
 
 fn close_room_via_proxy(room_code: &str) {
     let url = format!(
@@ -312,57 +237,12 @@ fn close_room_via_proxy(room_code: &str) {
 }
 
 pub fn close_room_on_github(room_code: &str) {
-    let Some(token) = get_github_token() else {
-        close_room_via_proxy(room_code);
-        return;
-    };
-    let get_url = format!(
-        "https://api.github.com/repos/coder2h2/Transmit-Center/contents/{}.txt",
-        room_code
-    );
-    
-    let get_output = std::process::Command::new("curl")
-        .arg("-s")
-        .arg("-m")
-        .arg("5")
-        .arg("-H")
-        .arg(format!("Authorization: token {}", token))
-        .arg("-H")
-        .arg("User-Agent: Code-Termination")
-        .arg(&get_url)
-        .output();
-        
-    if let Ok(out) = get_output {
-        let s = String::from_utf8_lossy(&out.stdout);
-        if let Some(sha_idx) = s.find("\"sha\":\"") {
-            let sha = &s[sha_idx + 7..];
-            if let Some(end_idx) = sha.find('"') {
-                let sha_val = &sha[..end_idx];
-                let payload = format!(r#"{{"message":"Close room","sha":"{}"}}"#, sha_val);
-                let _ = std::process::Command::new("curl")
-                    .arg("-X")
-                    .arg("DELETE")
-                    .arg("-s")
-                    .arg("-m")
-                    .arg("5")
-                    .arg("-H")
-                    .arg(format!("Authorization: token {}", token))
-                    .arg("-H")
-                    .arg("User-Agent: Code-Termination")
-                    .arg("-H")
-                    .arg("Content-Type: application/json")
-                    .arg("-d")
-                    .arg(payload)
-                    .arg(&get_url)
-                    .output();
-            }
-        }
-    }
+    close_room_via_proxy(room_code);
 }
 
 fn fetch_room_address(room_code: &str) -> Result<String, String> {
     let url = format!(
-        "https://raw.githubusercontent.com/coder2h2/Transmit-Center/main/{}.txt",
+        "https://code-termination-proxy.gideon-a-e-laurie.workers.dev/rooms/{}",
         room_code
     );
     
@@ -377,13 +257,13 @@ fn fetch_room_address(room_code: &str) -> Result<String, String> {
         Ok(out) => {
             if out.status.success() {
                 let content = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                if content.is_empty() || content.contains("404") || content.contains("Not Found") {
+                if content.is_empty() || content.contains("404") || content.contains("Not Found") || content.contains("Error") {
                     Err("Room not found".to_string())
                 } else {
                     Ok(content)
                 }
             } else {
-                Err("Failed to fetch room code from GitHub".to_string())
+                Err("Failed to fetch room code from proxy".to_string())
             }
         }
         Err(e) => Err(format!("Failed to run curl: {:?}", e)),
@@ -707,41 +587,20 @@ pub fn host_game_start(
             ip_port.push_str("|BATTLE");
         }
         
-        // If developer has a token, register code on GitHub; otherwise try proxy
-        if let Some(token) = get_github_token() {
-            let room_code = generate_room_code();
-            match host_room_on_github(&room_code, &ip_port, &token) {
-                Ok(_) => {
-                    let _ = socket.set_nonblocking(true);
-                    let _ = tx.send(MultiplayerEvent::HostSuccess { u_socket: socket, room_code, is_battle });
-                }
-                Err(_) => {
-                    // Fallback to direct connection if GitHub fails
-                    let _ = socket.set_nonblocking(true);
-                    let _ = tx.send(MultiplayerEvent::HostSuccess { 
-                        u_socket: socket, 
-                        room_code: format!("DIRECT ({})", ip_port),
-                        is_battle,
-                    });
-                }
+        let room_code = generate_room_code();
+        match host_room_via_proxy(&room_code, &ip_port) {
+            Ok(_) => {
+                let _ = socket.set_nonblocking(true);
+                let _ = tx.send(MultiplayerEvent::HostSuccess { u_socket: socket, room_code, is_battle });
             }
-        } else {
-            // No token present: Try proxy
-            let room_code = generate_room_code();
-            match host_room_via_proxy(&room_code, &ip_port) {
-                Ok(_) => {
-                    let _ = socket.set_nonblocking(true);
-                    let _ = tx.send(MultiplayerEvent::HostSuccess { u_socket: socket, room_code, is_battle });
-                }
-                Err(_) => {
-                    // Fallback to direct connection if proxy fails
-                    let _ = socket.set_nonblocking(true);
-                    let _ = tx.send(MultiplayerEvent::HostSuccess { 
-                        u_socket: socket, 
-                        room_code: format!("DIRECT ({})", ip_port),
-                        is_battle,
-                    });
-                }
+            Err(_) => {
+                // Fallback to direct connection if proxy fails
+                let _ = socket.set_nonblocking(true);
+                let _ = tx.send(MultiplayerEvent::HostSuccess { 
+                    u_socket: socket, 
+                    room_code: format!("DIRECT ({})", ip_port),
+                    is_battle,
+                });
             }
         }
     });
@@ -1251,11 +1110,7 @@ pub fn join_game_start(
             };
             
             let client_room_code = format!("{}_client", room_code);
-            if let Some(token) = get_github_token() {
-                let _ = host_room_on_github(&client_room_code, &client_public_addr_str, &token);
-            } else {
-                let _ = host_room_via_proxy(&client_room_code, &client_public_addr_str);
-            }
+            let _ = host_room_via_proxy(&client_room_code, &client_public_addr_str);
         }
         
         let _ = socket.set_nonblocking(true);

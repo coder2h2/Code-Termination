@@ -21,6 +21,8 @@ use systems::dlc_menu::*;
 use systems::boss_transition::*;
 use systems::mode_select::*;
 use systems::multiplayer::*;
+use systems::battle::*;
+
 
 fn main() {
     run_auto_update();
@@ -45,6 +47,7 @@ fn main() {
         .insert_resource(RoomCodeInput::default())
         .insert_resource(MultiplayerSocket::default())
         .insert_resource(MultiplayerChannel::default())
+        .insert_resource(CustomWeapon::default())
         .add_systems(Startup, setup)
         // Title screen
         .add_systems(OnEnter(AppState::TitleScreen), (reset_virtual_time_system, setup_title_screen))
@@ -165,5 +168,29 @@ fn main() {
         ).run_if(in_state(AppState::JoinInput)))
         // Global Multiplayer channel monitor
         .add_systems(Update, multiplayer_channel_system)
+        // Weapon Designer Screen
+        .add_systems(OnEnter(AppState::WeaponDesigner), setup_weapon_designer)
+        .add_systems(OnExit(AppState::WeaponDesigner), cleanup_weapon_designer)
+        .add_systems(Update, (
+            weapon_designer_button_system,
+            update_weapon_designer_ui,
+        ).run_if(in_state(AppState::WeaponDesigner)))
+        // Battle Arena Sandbox Screen
+        .add_systems(OnEnter(AppState::BattleArena), setup_battle_arena)
+        .add_systems(OnExit(AppState::BattleArena), cleanup_battle_arena)
+        .add_systems(Update, (
+            (
+                move_player,
+                jump_player,
+                apply_velocity,
+                update_glitch,
+                battle_arena_shooting_system,
+                bullet_movement_system,
+                battle_arena_spawn_system,
+                battle_arena_enemy_movement_system,
+                battle_arena_collision_system,
+            ).chain(),
+            battle_arena_ui_update_system,
+        ).run_if(in_state(AppState::BattleArena)))
         .run();
 }

@@ -175,6 +175,7 @@ pub enum TitleButtonAction {
     Achievements,
     Dlc,
     Quit,
+    Battle,
 }
 
 #[derive(Component)]
@@ -238,3 +239,67 @@ pub enum SettingsButtonAction {
     Title,
     TutorialDone,
 }
+
+// --- Weapon Designer & Battle Arena Components ---
+
+#[derive(Component)]
+pub struct WeaponDesignerUI;
+
+#[derive(Component)]
+pub struct BattleArenaUI;
+
+#[derive(Component)]
+pub struct CustomBullet {
+    pub damage: u32,
+    pub velocity: Vec2,
+}
+
+#[derive(Component)]
+pub struct WeaponNameText;
+
+#[derive(Component)]
+pub struct BudgetText;
+
+#[derive(Component)]
+pub struct DamageValText;
+
+#[derive(Component)]
+pub struct CooldownValText;
+
+#[derive(Component)]
+pub struct SpeedValText;
+
+#[derive(Component)]
+pub struct MultishotValText;
+
+#[derive(Component)]
+pub struct ColorBoxIndicator;
+
+#[derive(Component, Clone, Copy, PartialEq, Eq)]
+pub enum WeaponDesignerButtonAction {
+    IncDamage,
+    DecDamage,
+    IncCooldown,
+    DecCooldown,
+    IncSpeed,
+    DecSpeed,
+    IncMultishot,
+    DecMultishot,
+    ChangeColor,
+    RandomName,
+    CompileAndTest,
+    Back,
+}
+
+#[derive(Component)]
+pub struct BattleScoreText;
+
+#[derive(Component)]
+pub struct BattleTimerText;
+
+#[derive(Component)]
+pub struct BattleHealthText;
+
+#[derive(Component)]
+pub struct BattleWeaponNameText;
+

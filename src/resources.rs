@@ -43,6 +43,8 @@ pub enum AppState {
     MultiplayerMenu,
     HostWaiting,
     JoinInput,
+    WeaponDesigner,
+    BattleArena,
 }
 
 #[derive(Resource, Default)]
@@ -87,3 +89,29 @@ pub struct Achievements {
     pub better_call_tech_support: bool,
     pub death_count: u32,
 }
+
+#[derive(Resource, Clone)]
+pub struct CustomWeapon {
+    pub name: String,
+    pub damage_stat: u32,       // 1 to 10
+    pub cooldown_stat: u32,     // 1 to 10
+    pub speed_stat: u32,        // 1 to 10
+    pub multishot_stat: u32,    // 1 to 5 (bullets)
+    pub color_idx: u32,         // 0: Cyan, 1: Pink, 2: Yellow, 3: Green
+    pub shoot_cooldown: f32,
+}
+
+impl Default for CustomWeapon {
+    fn default() -> Self {
+        Self {
+            name: "KERNEL_BLASTER".to_string(),
+            damage_stat: 3,
+            cooldown_stat: 3,
+            speed_stat: 5,
+            multishot_stat: 1,
+            color_idx: 0,
+            shoot_cooldown: 0.0,
+        }
+    }
+}
+

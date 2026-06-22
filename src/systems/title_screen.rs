@@ -192,6 +192,33 @@ pub fn setup_title_screen(
             ));
         });
 
+        // Battle Arena Button
+        parent.spawn((
+            Button,
+            Node {
+                width: Val::Px(240.0),
+                height: Val::Px(50.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                border: UiRect::all(Val::Px(2.0)),
+                margin: UiRect::bottom(Val::Px(15.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgb(0.12, 0.12, 0.15)),
+            BorderColor::all(Color::srgb(0.0, 1.0, 0.0)),
+            TitleButtonAction::Battle,
+        ))
+        .with_children(|btn| {
+            btn.spawn((
+                Text::new("BATTLE ARENA"),
+                TextFont {
+                    font_size: 24.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.0, 1.0, 1.0)), // Cyan for Battle Arena
+            ));
+        });
+
         // Quit Button
         parent.spawn((
             Button,
@@ -245,7 +272,8 @@ pub fn title_button_system(
         TitleButtonAction::Multiplayer => 2,
         TitleButtonAction::Achievements => 3,
         TitleButtonAction::Dlc => 4,
-        TitleButtonAction::Quit => 5,
+        TitleButtonAction::Battle => 5,
+        TitleButtonAction::Quit => 6,
     });
     let total_buttons = buttons.len();
 
@@ -343,6 +371,9 @@ pub fn title_button_system(
             }
             TitleButtonAction::Dlc => {
                 next_state.set(AppState::DlcMenu);
+            }
+            TitleButtonAction::Battle => {
+                next_state.set(AppState::WeaponDesigner);
             }
             TitleButtonAction::Quit => {
                 app_exit_events.write(AppExit::Success);
